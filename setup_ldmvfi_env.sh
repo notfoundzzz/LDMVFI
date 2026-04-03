@@ -3,8 +3,17 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_NAME="${ENV_NAME:-ldmvfi}"
+LOG_ROOT="${LOG_ROOT:-$ROOT_DIR/logs}"
 
 cd "$ROOT_DIR"
+mkdir -p "$LOG_ROOT"
+STAMP="$(date +%Y%m%d_%H%M%S)"
+LOG_FILE="$LOG_ROOT/setup_env_${ENV_NAME}_${STAMP}.log"
+ln -sfn "$(basename "$LOG_FILE")" "$LOG_ROOT/latest_setup_env.log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+echo "root=$ROOT_DIR"
+echo "env_name=$ENV_NAME"
 
 if conda env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
   echo "env_exists=$ENV_NAME"

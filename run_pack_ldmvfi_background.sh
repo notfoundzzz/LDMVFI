@@ -3,6 +3,7 @@ set -euo pipefail
 cd /home/zhahl/LDMVFI
 mkdir -p dist
 LOG_FILE="dist/pack_ldmvfi_$(date +%Y%m%d_%H%M%S).log"
+ln -sfn "$(basename "$LOG_FILE")" dist/latest_pack_background.log
 nohup /home/zhahl/miniconda3/envs/ldmvfi/bin/python -u - <<'PY' > "$LOG_FILE" 2>&1 &
 import conda_pack
 out='/home/zhahl/LDMVFI/dist/ldmvfi_env_api.tar.gz'
