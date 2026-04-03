@@ -6,6 +6,9 @@ import numpy as np
 from packaging import version
 from ldm.modules.ema import LitEma
 from contextlib import contextmanager
+from ldm.path_setup import ensure_local_dependency_paths
+
+ensure_local_dependency_paths()
 
 from taming.modules.vqvae.quantize import VectorQuantizer2 as VectorQuantizer
 

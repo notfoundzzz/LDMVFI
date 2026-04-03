@@ -17,8 +17,10 @@ from pytorch_lightning.callbacks import ModelCheckpoint, Callback, LearningRateM
 from pytorch_lightning.utilities.distributed import rank_zero_only
 from pytorch_lightning.utilities import rank_zero_info
 
+from ldm.path_setup import ensure_local_dependency_paths
 from ldm.util import instantiate_from_config
 
+ensure_local_dependency_paths()
 
 def get_parser(**parser_kwargs):
     def str2bool(v):

@@ -3,9 +3,12 @@ import os
 import torch
 from functools import partial
 from omegaconf import OmegaConf
+from ldm.path_setup import ensure_local_dependency_paths
 from main import instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.data import testsets
+
+ensure_local_dependency_paths()
 
 
 parser = argparse.ArgumentParser(description='Frame Interpolation Evaluation')

@@ -3,6 +3,10 @@ from torch import nn
 import torch.nn.functional as F
 from einops import repeat
 
+from ldm.path_setup import ensure_local_dependency_paths
+
+ensure_local_dependency_paths()
+
 from taming.modules.discriminator.model import NLayerDiscriminator, weights_init
 from taming.modules.losses.lpips import LPIPS
 from taming.modules.losses.vqperceptual import hinge_d_loss, vanilla_d_loss

@@ -1,0 +1,45 @@
+model:
+  base_learning_rate: 2.0e-04
+  target: ldm.models.stsr_baseline.DeterministicSTSR
+  params:
+    learning_rate: 2.0e-04
+    hidden_channels: 64
+    num_blocks: 6
+
+data:
+  target: main.DataModuleFromConfig
+  params:
+    batch_size: 32
+    num_workers: 4
+    wrap: false
+    train:
+      target: ldm.data.stsr.BVI_Vimeo_triplet_STSR
+      params:
+        db_dir: C:/data_tmp/
+        crop_sz: [256, 256]
+        iter: True
+        scale_factor: 2
+        upsample_lr: False
+    validation:
+      target: ldm.data.stsr.Vimeo90k_triplet_STSR
+      params:
+        db_dir: C:/data_tmp/vimeo_septuplet/
+        train: False
+        crop_sz: [256, 256]
+        augment_s: False
+        augment_t: False
+        scale_factor: 2
+        upsample_lr: False
+
+lightning:
+  callbacks:
+    image_logger:
+      target: main.ImageLogger
+      params:
+        batch_frequency: 1000
+        val_batch_frequency: 100
+        max_images: 8
+        increase_log_steps: False
+  trainer:
+    benchmark: True
+    max_epochs: 200
