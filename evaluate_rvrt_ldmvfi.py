@@ -53,6 +53,19 @@ def downsample(frame, scale):
     return torch.nn.functional.interpolate(frame, scale_factor=1.0 / scale, mode="bicubic", align_corners=False)
 
 
+def center_crop_to(tensor, height, width):
+    _, _, h, w = tensor.shape
+    top = max((h - height) // 2, 0)
+    left = max((w - width) // 2, 0)
+    return tensor[:, :, top : top + height, left : left + width]
+
+
+def align_for_metrics(*tensors):
+    min_h = min(t.shape[-2] for t in tensors)
+    min_w = min(t.shape[-1] for t in tensors)
+    return [center_crop_to(t, min_h, min_w) for t in tensors]
+
+
 def main():
     parser = argparse.ArgumentParser(description="Evaluate RVRT + LDMVFI pipeline on triplet folders")
     parser.add_argument("--ldm_config", required=True)
@@ -106,9 +119,15 @@ def main():
         save_image(prev_sr, join(item_dir, "prev_sr.png"), value_range=(-1, 1), normalize=True)
         save_image(next_sr, join(item_dir, "next_sr.png"), value_range=(-1, 1), normalize=True)
 
+        gt_eval, out_eval, prev_eval, next_eval = align_for_metrics(
+            gt.to(pipeline.device),
+            out,
+            prev_hr.to(pipeline.device),
+            next_hr.to(pipeline.device),
+        )
         metrics_msg = {}
         for metric in args.metrics:
-            score = getattr(utility, f"calc_{metric.lower()}")(gt.to(pipeline.device), out, [prev_hr.to(pipeline.device), next_hr.to(pipeline.device)])[0].item()
+            score = getattr(utility, f"calc_{metric.lower()}")(gt_eval, out_eval, [prev_eval, next_eval])[0].item()
             results[metric].append(score)
             metrics_msg[metric] = round(score, 3)
         print(name, metrics_msg)
