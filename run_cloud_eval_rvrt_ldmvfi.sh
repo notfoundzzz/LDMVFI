@@ -16,7 +16,7 @@ else
 fi
 LDM_CONFIG="${LDM_CONFIG:-$ROOT_DIR/configs/ldm/ldmvfi-vqflow-f32-c256-concat_max.yaml}"
 LDM_CKPT="${LDM_CKPT:-/data/Shenzhen/zhahongli/models/ldmvfi/ldmvfi-vqflow-f32-c256-concat_max.ckpt}"
-DATASET_ROOT="${DATASET_ROOT:-/data/Shenzhen/zhahongli/benchmarks/ucf}"
+DATASET_ROOT="${DATASET_ROOT:-/data/Shenzhen/zzff/STVSR/data/vimeo_septuplet/sequences}"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/eval_results_rvrt_ldmvfi}"
 SCALE="${SCALE:-4}"
 SR_MODE="${SR_MODE:-bicubic}"

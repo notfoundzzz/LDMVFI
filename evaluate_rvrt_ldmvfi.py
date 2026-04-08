@@ -17,6 +17,7 @@ def load_triplet(folder, transform):
     candidates = [
         ("frame_00.png", "frame_01_gt.png", "frame_02.png"),
         ("frame1.png", "framet.png", "frame2.png"),
+        ("im3.png", "im4.png", "im5.png"),
     ]
     for prev_name, gt_name, next_name in candidates:
         prev_path = join(folder, prev_name)
@@ -28,6 +29,24 @@ def load_triplet(folder, transform):
             nxt = transform(Image.open(next_path)).unsqueeze(0)
             return prev, gt, nxt
     raise FileNotFoundError(f"No supported triplet naming found in {folder}")
+
+
+def collect_triplet_folders(dataset_root):
+    triplet_markers = [
+        ("frame_00.png", "frame_01_gt.png", "frame_02.png"),
+        ("frame1.png", "framet.png", "frame2.png"),
+        ("im3.png", "im4.png", "im5.png"),
+    ]
+    folders = []
+    for root, _, files in os.walk(dataset_root):
+        file_set = set(files)
+        for marker in triplet_markers:
+            if all(name in file_set for name in marker):
+                rel_name = os.path.relpath(root, dataset_root)
+                folders.append((rel_name, root))
+                break
+    folders.sort(key=lambda x: x[0])
+    return folders
 
 
 def downsample(frame, scale):
@@ -64,9 +83,12 @@ def main():
         rvrt_ckpt=args.rvrt_ckpt,
     )
     results = {metric: [] for metric in args.metrics}
-    subfolders = sorted([f for f in os.listdir(args.dataset_root) if os.path.isdir(join(args.dataset_root, f))])
-    for name in subfolders:
-        prev_hr, gt, next_hr = load_triplet(join(args.dataset_root, name), transform)
+    triplet_folders = collect_triplet_folders(args.dataset_root)
+    if not triplet_folders:
+        raise FileNotFoundError(f"No supported triplet folders found under {args.dataset_root}")
+
+    for name, folder in triplet_folders:
+        prev_hr, gt, next_hr = load_triplet(folder, transform)
         prev_lr = downsample(prev_hr, args.scale)
         next_lr = downsample(next_hr, args.scale)
         with torch.no_grad():
