@@ -1,6 +1,8 @@
 import importlib
 import sys
 
+from ldm.path_setup import ensure_local_dependency_paths
+
 MODULES = [
     "torch",
     "torchvision",
@@ -21,6 +23,7 @@ MODULES = [
 
 
 def main():
+    ensure_local_dependency_paths()
     print("python", sys.version.replace("\n", " "))
     failed = False
     for name in MODULES:
