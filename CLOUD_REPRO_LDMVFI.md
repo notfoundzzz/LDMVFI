@@ -75,6 +75,10 @@ Official repo environment:
 - torchvision `0.12.0`
 - CUDA toolkit `11.3`
 - PyTorch Lightning `1.7.7`
+- additional packages for `RVRT + LDMVFI`:
+  - `addict`
+  - `ninja`
+  - `scikit-image`
 
 Primary source:
 
@@ -89,6 +93,26 @@ conda activate ldmvfi
 ```
 
 If online install is blocked on cloud, prepare the env or missing wheel packages locally, upload them, then unpack into the target env site-packages.
+
+## RVRT frontend
+
+If you use the `RVRT + LDMVFI` route, keep the official RVRT repository at a separate path, for example:
+
+```text
+/data/Shenzhen/zhahongli/RVRT
+```
+
+Recommended pretrained frontend model:
+
+```text
+/data/Shenzhen/zhahongli/RVRT/model_zoo/rvrt/002_RVRT_videosr_bi_Vimeo_14frames.pth
+```
+
+Notes:
+
+- RVRT uses a CUDA extension under `models/op/deform_attn.py`
+- the extension is compiled on first import using `torch.utils.cpp_extension.load(...)`
+- `ninja` should be present in the environment for a smoother first compile
 
 
 ## Dataset structure
