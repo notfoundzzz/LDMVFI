@@ -8,7 +8,12 @@ unset LD_LIBRARY_PATH || true
 unset CUDA_HOME || true
 unset CUDA_PATH || true
 
-PYTHON_BIN="${PYTHON_BIN:-python}"
+DEFAULT_PYTHON_BIN="/data/Shenzhen/zhahongli/envs/ldmvfi/bin/python"
+if [ -x "$DEFAULT_PYTHON_BIN" ]; then
+  PYTHON_BIN="${PYTHON_BIN:-$DEFAULT_PYTHON_BIN}"
+else
+  PYTHON_BIN="${PYTHON_BIN:-python}"
+fi
 DATA_ROOT="${DATA_ROOT:-/data/Shenzhen/zhahongli/benchmarks}"
 CKPT_PATH="${CKPT_PATH:-/data/Shenzhen/zhahongli/models/ldmvfi/ldmvfi-vqflow-f32-c256-concat_max.ckpt}"
 DATASET="${DATASET:-Middlebury_others}"

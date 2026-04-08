@@ -8,7 +8,12 @@ unset LD_LIBRARY_PATH || true
 unset CUDA_HOME || true
 unset CUDA_PATH || true
 
-PYTHON_BIN="${PYTHON_BIN:-python}"
+DEFAULT_PYTHON_BIN="/data/Shenzhen/zhahongli/envs/ldmvfi/bin/python"
+if [ -x "$DEFAULT_PYTHON_BIN" ]; then
+  PYTHON_BIN="${PYTHON_BIN:-$DEFAULT_PYTHON_BIN}"
+else
+  PYTHON_BIN="${PYTHON_BIN:-python}"
+fi
 LOG_ROOT="${LOG_ROOT:-$ROOT_DIR/logs}"
 
 mkdir -p "$LOG_ROOT"
