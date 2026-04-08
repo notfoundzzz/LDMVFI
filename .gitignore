@@ -4,6 +4,11 @@
 *.pyc
 *egg*
 *src/*
+!src/
+!src/clip/
+!src/clip/**
+!src/taming-transformers/
+!src/taming-transformers/**
 *.ipynb
 logs/*
 *delete*
