@@ -11,6 +11,12 @@ MODULES = [
     "imageio",
     "timm",
     "cupy",
+    "taming",
+    "clip",
+    "ftfy",
+    "addict",
+    "skimage",
+    "ninja",
 ]
 
 
