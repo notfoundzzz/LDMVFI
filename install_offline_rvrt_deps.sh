@@ -9,6 +9,10 @@ if [ -x "$DEFAULT_PYTHON_BIN" ]; then
 else
   PYTHON_BIN="${PYTHON_BIN:-python}"
 fi
+PYTHON_DIR="$(dirname "$PYTHON_BIN")"
+if [ -d "$PYTHON_DIR" ]; then
+  export PATH="$PYTHON_DIR:$PATH"
+fi
 LOG_ROOT="${LOG_ROOT:-$ROOT_DIR/logs}"
 
 mkdir -p "$LOG_ROOT"
@@ -19,6 +23,7 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo "root=$ROOT_DIR"
 echo "python=$PYTHON_BIN"
+echo "path=$PATH"
 echo "pkg_dir=$PKG_DIR"
 
 "$PYTHON_BIN" -m pip install --no-index --find-links "$PKG_DIR" addict ftfy ninja tifffile lazy_loader

@@ -14,6 +14,10 @@ if [ -x "$DEFAULT_PYTHON_BIN" ]; then
 else
   PYTHON_BIN="${PYTHON_BIN:-python}"
 fi
+PYTHON_DIR="$(dirname "$PYTHON_BIN")"
+if [ -d "$PYTHON_DIR" ]; then
+  export PATH="$PYTHON_DIR:$PATH"
+fi
 LOG_ROOT="${LOG_ROOT:-$ROOT_DIR/logs}"
 
 mkdir -p "$LOG_ROOT"
@@ -23,5 +27,6 @@ ln -sfn "$(basename "$LOG_FILE")" "$LOG_ROOT/latest_check_env.log"
 
 echo "root=$ROOT_DIR" | tee -a "$LOG_FILE"
 echo "python=$PYTHON_BIN" | tee -a "$LOG_FILE"
+echo "path=$PATH" | tee -a "$LOG_FILE"
 
 "$PYTHON_BIN" -u check_env_ldmvfi.py 2>&1 | tee -a "$LOG_FILE"

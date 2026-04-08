@@ -14,6 +14,10 @@ if [ -x "$DEFAULT_PYTHON_BIN" ]; then
 else
   PYTHON_BIN="${PYTHON_BIN:-python}"
 fi
+PYTHON_DIR="$(dirname "$PYTHON_BIN")"
+if [ -d "$PYTHON_DIR" ]; then
+  export PATH="$PYTHON_DIR:$PATH"
+fi
 LDM_CONFIG="${LDM_CONFIG:-$ROOT_DIR/configs/ldm/ldmvfi-vqflow-f32-c256-concat_max.yaml}"
 LDM_CKPT="${LDM_CKPT:-/data/Shenzhen/zhahongli/models/ldmvfi/ldmvfi-vqflow-f32-c256-concat_max.ckpt}"
 DATASET_ROOT="${DATASET_ROOT:-/data/Shenzhen/zzff/STVSR/data/vimeo_septuplet/sequences}"
@@ -33,6 +37,7 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo "root=$ROOT_DIR"
 echo "python=$PYTHON_BIN"
+echo "path=$PATH"
 echo "ldm_config=$LDM_CONFIG"
 echo "ldm_ckpt=$LDM_CKPT"
 echo "dataset_root=$DATASET_ROOT"
