@@ -31,7 +31,22 @@ def load_triplet(folder, transform):
     raise FileNotFoundError(f"No supported triplet naming found in {folder}")
 
 
-def collect_triplet_folders(dataset_root):
+def collect_triplet_folders(dataset_root, list_file=None):
+    if list_file:
+        seq_root = dataset_root
+        if os.path.basename(os.path.normpath(dataset_root)) != "sequences":
+            seq_root = join(dataset_root, "sequences")
+        folders = []
+        with open(list_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                folder = join(seq_root, *line.split("/"))
+                folders.append((line, folder))
+        folders.sort(key=lambda x: x[0])
+        return folders
+
     triplet_markers = [
         ("frame_00.png", "frame_01_gt.png", "frame_02.png"),
         ("frame1.png", "framet.png", "frame2.png"),
@@ -71,6 +86,7 @@ def main():
     parser.add_argument("--ldm_config", required=True)
     parser.add_argument("--ldm_ckpt", required=True)
     parser.add_argument("--dataset_root", required=True)
+    parser.add_argument("--list_file", default=None)
     parser.add_argument("--out_dir", required=True)
     parser.add_argument("--scale", type=int, default=4)
     parser.add_argument("--sr_mode", choices=["bicubic", "rvrt"], default="bicubic")
@@ -81,6 +97,7 @@ def main():
     parser.add_argument("--ddim_steps", type=int, default=200)
     parser.add_argument("--ddim_eta", type=float, default=1.0)
     parser.add_argument("--metrics", nargs="+", default=["PSNR", "SSIM"])
+    parser.add_argument("--max_samples", type=int, default=0)
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -96,11 +113,15 @@ def main():
         rvrt_ckpt=args.rvrt_ckpt,
     )
     results = {metric: [] for metric in args.metrics}
-    triplet_folders = collect_triplet_folders(args.dataset_root)
+    triplet_folders = collect_triplet_folders(args.dataset_root, list_file=args.list_file)
     if not triplet_folders:
         raise FileNotFoundError(f"No supported triplet folders found under {args.dataset_root}")
+    if args.max_samples > 0:
+        triplet_folders = triplet_folders[: args.max_samples]
+    print(f"Found {len(triplet_folders)} triplets")
 
-    for name, folder in triplet_folders:
+    for idx, (name, folder) in enumerate(triplet_folders, start=1):
+        print(f"[{idx}/{len(triplet_folders)}] {name}")
         prev_hr, gt, next_hr = load_triplet(folder, transform)
         prev_lr = downsample(prev_hr, args.scale)
         next_lr = downsample(next_hr, args.scale)
