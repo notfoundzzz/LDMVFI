@@ -5,7 +5,6 @@ import os
 import torch
 import torch.nn as nn
 from torchvision import models
-from torchvision.models import VGG16_Weights
 from collections import namedtuple
 
 from taming.util import get_ckpt_path
@@ -84,16 +83,24 @@ class NetLinLayer(nn.Module):
 class vgg16(torch.nn.Module):
     def __init__(self, requires_grad=False, pretrained=True):
         super(vgg16, self).__init__()
-        weights = None
         if pretrained:
             try:
-                weights = VGG16_Weights.IMAGENET1K_V1
-                vgg_pretrained_features = models.vgg16(weights=weights, progress=False).features
+                if hasattr(models, "VGG16_Weights"):
+                    weights = models.VGG16_Weights.IMAGENET1K_V1
+                    vgg_pretrained_features = models.vgg16(weights=weights, progress=False).features
+                else:
+                    vgg_pretrained_features = models.vgg16(pretrained=True, progress=False).features
             except Exception as exc:
                 print(f"Warning: falling back to randomly initialized VGG16 because pretrained weights are unavailable: {exc}")
-                vgg_pretrained_features = models.vgg16(weights=None, progress=False).features
+                if hasattr(models, "VGG16_Weights"):
+                    vgg_pretrained_features = models.vgg16(weights=None, progress=False).features
+                else:
+                    vgg_pretrained_features = models.vgg16(pretrained=False, progress=False).features
         else:
-            vgg_pretrained_features = models.vgg16(weights=None, progress=False).features
+            if hasattr(models, "VGG16_Weights"):
+                vgg_pretrained_features = models.vgg16(weights=None, progress=False).features
+            else:
+                vgg_pretrained_features = models.vgg16(pretrained=False, progress=False).features
         self.slice1 = torch.nn.Sequential()
         self.slice2 = torch.nn.Sequential()
         self.slice3 = torch.nn.Sequential()
