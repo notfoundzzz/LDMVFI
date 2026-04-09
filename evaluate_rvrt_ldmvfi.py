@@ -33,16 +33,13 @@ def load_triplet(folder, transform):
 
 def collect_triplet_folders(dataset_root, list_file=None):
     if list_file:
-        seq_root = dataset_root
-        if os.path.basename(os.path.normpath(dataset_root)) != "sequences":
-            seq_root = join(dataset_root, "sequences")
         folders = []
         with open(list_file, "r") as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
-                folder = join(seq_root, *line.split("/"))
+                folder = join(dataset_root, *line.split("/"))
                 folders.append((line, folder))
         folders.sort(key=lambda x: x[0])
         return folders
@@ -64,10 +61,6 @@ def collect_triplet_folders(dataset_root, list_file=None):
     return folders
 
 
-def downsample(frame, scale):
-    return torch.nn.functional.interpolate(frame, scale_factor=1.0 / scale, mode="bicubic", align_corners=False)
-
-
 def center_crop_to(tensor, height, width):
     _, _, h, w = tensor.shape
     top = max((h - height) // 2, 0)
@@ -85,7 +78,9 @@ def main():
     parser = argparse.ArgumentParser(description="Evaluate RVRT + LDMVFI pipeline on triplet folders")
     parser.add_argument("--ldm_config", required=True)
     parser.add_argument("--ldm_ckpt", required=True)
-    parser.add_argument("--dataset_root", required=True)
+    parser.add_argument("--dataset_root_hr", required=True)
+    parser.add_argument("--dataset_root_lr", required=True)
+    parser.add_argument("--split", default=None)
     parser.add_argument("--list_file", default=None)
     parser.add_argument("--out_dir", required=True)
     parser.add_argument("--scale", type=int, default=4)
@@ -113,18 +108,23 @@ def main():
         rvrt_ckpt=args.rvrt_ckpt,
     )
     results = {metric: [] for metric in args.metrics}
-    triplet_folders = collect_triplet_folders(args.dataset_root, list_file=args.list_file)
+    dataset_root_hr = args.dataset_root_hr
+    dataset_root_lr = args.dataset_root_lr
+    if args.split:
+        dataset_root_lr = join(dataset_root_lr, args.split)
+
+    triplet_folders = collect_triplet_folders(dataset_root_lr, list_file=args.list_file)
     if not triplet_folders:
-        raise FileNotFoundError(f"No supported triplet folders found under {args.dataset_root}")
+        raise FileNotFoundError(f"No supported triplet folders found under {dataset_root_lr}")
     if args.max_samples > 0:
         triplet_folders = triplet_folders[: args.max_samples]
     print(f"Found {len(triplet_folders)} triplets")
 
     for idx, (name, folder) in enumerate(triplet_folders, start=1):
         print(f"[{idx}/{len(triplet_folders)}] {name}")
-        prev_hr, gt, next_hr = load_triplet(folder, transform)
-        prev_lr = downsample(prev_hr, args.scale)
-        next_lr = downsample(next_hr, args.scale)
+        prev_lr, _, next_lr = load_triplet(folder, transform)
+        hr_folder = join(dataset_root_hr, *name.split("/"))
+        _, gt, _ = load_triplet(hr_folder, transform)
         with torch.no_grad():
             out, prev_sr, next_sr = pipeline.interpolate(
                 prev_lr,
@@ -143,8 +143,8 @@ def main():
         gt_eval, out_eval, prev_eval, next_eval = align_for_metrics(
             gt.to(pipeline.device),
             out,
-            prev_hr.to(pipeline.device),
-            next_hr.to(pipeline.device),
+            prev_sr,
+            next_sr,
         )
         metrics_msg = {}
         for metric in args.metrics:
