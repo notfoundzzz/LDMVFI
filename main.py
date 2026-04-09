@@ -1,4 +1,4 @@
-import argparse, os, sys, datetime, glob
+import argparse, os, sys, datetime, glob, inspect
 import numpy as np
 import time
 import torch
@@ -18,9 +18,36 @@ from pytorch_lightning.utilities.distributed import rank_zero_only
 from pytorch_lightning.utilities import rank_zero_info
 
 from ldm.path_setup import ensure_local_dependency_paths
-from ldm.util import instantiate_from_config
+from ldm.util import instantiate_from_config, get_obj_from_str
 
 ensure_local_dependency_paths()
+
+
+def instantiate_from_config_compatible(config):
+    if "target" not in config:
+        return instantiate_from_config(config)
+    obj = get_obj_from_str(config["target"])
+    params = dict(config.get("params", dict()))
+    try:
+        sig = inspect.signature(obj.__init__)
+        accepts_var_kwargs = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+        if not accepts_var_kwargs:
+            valid = {
+                name for name, p in sig.parameters.items()
+                if name != "self" and p.kind in (
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    inspect.Parameter.KEYWORD_ONLY,
+                )
+            }
+            dropped = sorted(set(params) - valid)
+            if dropped:
+                print(f"Dropping unsupported params for {config['target']}: {dropped}")
+                params = {k: v for k, v in params.items() if k in valid}
+    except (TypeError, ValueError):
+        pass
+    return obj(**params)
 
 def get_parser(**parser_kwargs):
     def str2bool(v):
@@ -640,7 +667,7 @@ if __name__ == "__main__":
         elif 'ignore_keys_callback' in callbacks_cfg:
             del callbacks_cfg['ignore_keys_callback']
 
-        trainer_kwargs["callbacks"] = [instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg]
+        trainer_kwargs["callbacks"] = [instantiate_from_config_compatible(callbacks_cfg[k]) for k in callbacks_cfg]
 
         trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
         trainer.logdir = logdir  ###
