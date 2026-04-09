@@ -1,5 +1,7 @@
 """Stripped version of https://github.com/richzhang/PerceptualSimilarity/tree/master/models"""
 
+import os
+
 import torch
 import torch.nn as nn
 from torchvision import models
@@ -25,7 +27,12 @@ class LPIPS(nn.Module):
             param.requires_grad = False
 
     def load_from_pretrained(self, name="vgg_lpips"):
-        ckpt = get_ckpt_path(name, "taming/modules/autoencoder/lpips")
+        # Resolve the checkpoint relative to this vendored taming package so
+        # offline/cloud runs do not depend on the current working directory.
+        ckpt_root = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "autoencoder", "lpips")
+        )
+        ckpt = get_ckpt_path(name, ckpt_root)
         self.load_state_dict(torch.load(ckpt, map_location=torch.device("cpu")), strict=False)
         print("loaded pretrained LPIPS loss from {}".format(ckpt))
 
@@ -120,4 +127,3 @@ def normalize_tensor(x,eps=1e-10):
 
 def spatial_average(x, keepdim=True):
     return x.mean([2,3],keepdim=keepdim)
-
