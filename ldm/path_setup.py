@@ -10,7 +10,10 @@ def ensure_local_dependency_paths():
     ]
     for path in extra_paths:
         if os.path.isdir(path) and path not in sys.path:
-            sys.path.insert(0, path)
+            # Keep the project repo itself ahead of vendored third-party
+            # sources so imports like `main.ImageLogger` resolve to the local
+            # training entrypoint rather than `src/taming-transformers/main.py`.
+            sys.path.append(path)
 
 
 def ensure_repo_path(repo_root):
