@@ -31,7 +31,7 @@ def load_triplet(folder, transform):
     raise FileNotFoundError(f"No supported triplet naming found in {folder}")
 
 
-def collect_triplet_folders(dataset_root, list_file=None):
+def collect_triplet_folders(dataset_root, list_file=None, max_samples=0):
     if list_file:
         folders = []
         with open(list_file, "r") as f:
@@ -41,6 +41,8 @@ def collect_triplet_folders(dataset_root, list_file=None):
                     continue
                 folder = join(dataset_root, *line.split("/"))
                 folders.append((line, folder))
+                if max_samples > 0 and len(folders) >= max_samples:
+                    break
         folders.sort(key=lambda x: x[0])
         return folders
 
@@ -57,6 +59,8 @@ def collect_triplet_folders(dataset_root, list_file=None):
                 rel_name = os.path.relpath(root, dataset_root)
                 folders.append((rel_name, root))
                 break
+        if max_samples > 0 and len(folders) >= max_samples:
+            break
     folders.sort(key=lambda x: x[0])
     return folders
 
@@ -113,11 +117,9 @@ def main():
     if args.split:
         dataset_root_lr = join(dataset_root_lr, args.split)
 
-    triplet_folders = collect_triplet_folders(dataset_root_lr, list_file=args.list_file)
+    triplet_folders = collect_triplet_folders(dataset_root_lr, list_file=args.list_file, max_samples=args.max_samples)
     if not triplet_folders:
         raise FileNotFoundError(f"No supported triplet folders found under {dataset_root_lr}")
-    if args.max_samples > 0:
-        triplet_folders = triplet_folders[: args.max_samples]
     print(f"Found {len(triplet_folders)} triplets")
 
     for idx, (name, folder) in enumerate(triplet_folders, start=1):
