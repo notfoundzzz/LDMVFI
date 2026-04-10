@@ -26,11 +26,11 @@ BATCH_SIZE="${BATCH_SIZE:-4}"
 ACCUM="${ACCUM:-1}"
 NUM_WORKERS="${NUM_WORKERS:-4}"
 MAX_EPOCHS="${MAX_EPOCHS:-}"
-VQ_CKPT="${VQ_CKPT:-}"
+VQ_CKPT="${VQ_CKPT:-/data/Shenzhen/zhahongli/models/ldmvfi/vqflow-extracted.ckpt}"
 RVRT_ROOT="${RVRT_ROOT:-/data/Shenzhen/zhahongli/RVRT}"
 RVRT_CKPT="${RVRT_CKPT:-$RVRT_ROOT/model_zoo/rvrt/002_RVRT_videosr_bi_Vimeo_14frames.pth}"
 
-if [[ -z "$VQ_CKPT" ]]; then
+if [[ -z "$VQ_CKPT" || ! -f "$VQ_CKPT" ]]; then
   echo "VQ_CKPT is required"
   exit 1
 fi

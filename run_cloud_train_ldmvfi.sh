@@ -21,10 +21,10 @@ BATCH_SIZE="${BATCH_SIZE:-64}"
 ACCUM="${ACCUM:-1}"
 NUM_WORKERS="${NUM_WORKERS:-8}"
 MAX_EPOCHS="${MAX_EPOCHS:-}"
-VQ_CKPT="${VQ_CKPT:-}"
+VQ_CKPT="${VQ_CKPT:-/data/Shenzhen/zhahongli/models/ldmvfi/vqflow-extracted.ckpt}"
 USE_BVIDVC="${USE_BVIDVC:-auto}"
 
-if [[ -z "$VQ_CKPT" ]]; then
+if [[ -z "$VQ_CKPT" || ! -f "$VQ_CKPT" ]]; then
   echo "VQ_CKPT is required"
   exit 1
 fi
