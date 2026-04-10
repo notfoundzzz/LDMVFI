@@ -20,6 +20,7 @@ LOGDIR="${LOGDIR:-$ROOT_DIR/logs}"
 BATCH_SIZE="${BATCH_SIZE:-64}"
 ACCUM="${ACCUM:-1}"
 VQ_CKPT="${VQ_CKPT:-}"
+USE_BVIDVC="${USE_BVIDVC:-auto}"
 
 if [[ -z "$VQ_CKPT" ]]; then
   echo "VQ_CKPT is required"
@@ -38,6 +39,32 @@ echo "data_root=$DATA_ROOT" | tee -a "$LOG_FILE"
 echo "batch_size=$BATCH_SIZE" | tee -a "$LOG_FILE"
 echo "accum=$ACCUM" | tee -a "$LOG_FILE"
 echo "vq_ckpt=$VQ_CKPT" | tee -a "$LOG_FILE"
+echo "use_bvidvc=$USE_BVIDVC" | tee -a "$LOG_FILE"
+
+TRAIN_DOTLIST=(
+  "data.params.train.params.db_dir=$DATA_ROOT"
+)
+
+if [[ "$USE_BVIDVC" == "0" || "$USE_BVIDVC" == "false" ]]; then
+  TRAIN_DOTLIST=(
+    "data.params.train.target=ldm.data.bvi_vimeo.Vimeo90k_triplet"
+    "data.params.train.params.db_dir=$DATA_ROOT/vimeo_septuplet"
+    "data.params.train.params.train=True"
+    "data.params.train.params.crop_sz=[256,256]"
+    "data.params.train.params.augment_s=True"
+    "data.params.train.params.augment_t=True"
+  )
+elif [[ "$USE_BVIDVC" == "auto" && ! -d "$DATA_ROOT/bvidvc/quintuplets" ]]; then
+  echo "bvidvc/quintuplets not found, falling back to Vimeo-only training" | tee -a "$LOG_FILE"
+  TRAIN_DOTLIST=(
+    "data.params.train.target=ldm.data.bvi_vimeo.Vimeo90k_triplet"
+    "data.params.train.params.db_dir=$DATA_ROOT/vimeo_septuplet"
+    "data.params.train.params.train=True"
+    "data.params.train.params.crop_sz=[256,256]"
+    "data.params.train.params.augment_s=True"
+    "data.params.train.params.augment_t=True"
+  )
+fi
 
 "$PYTHON_BIN" -u main.py \
   --base configs/ldm/ldmvfi-vqflow-f32-c256-concat_max.yaml \
@@ -46,6 +73,6 @@ echo "vq_ckpt=$VQ_CKPT" | tee -a "$LOG_FILE"
   --logdir "$LOGDIR" \
   data.params.batch_size="$BATCH_SIZE" \
   lightning.trainer.accumulate_grad_batches="$ACCUM" \
-  data.params.train.params.db_dir="$DATA_ROOT" \
+  "${TRAIN_DOTLIST[@]}" \
   data.params.validation.params.db_dir="$DATA_ROOT/vimeo_septuplet" \
   model.params.first_stage_config.params.ckpt_path="$VQ_CKPT" 2>&1 | tee -a "$LOG_FILE"
