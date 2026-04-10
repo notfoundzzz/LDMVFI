@@ -24,6 +24,8 @@ CONFIG_PATH="${CONFIG_PATH:-configs/ldm/rvrt-lora-stsr-x4.yaml}"
 LOGDIR="${LOGDIR:-$ROOT_DIR/logs}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
 ACCUM="${ACCUM:-1}"
+NUM_WORKERS="${NUM_WORKERS:-4}"
+MAX_EPOCHS="${MAX_EPOCHS:-}"
 VQ_CKPT="${VQ_CKPT:-}"
 RVRT_ROOT="${RVRT_ROOT:-/data/Shenzhen/zhahongli/RVRT}"
 RVRT_CKPT="${RVRT_CKPT:-$RVRT_ROOT/model_zoo/rvrt/002_RVRT_videosr_bi_Vimeo_14frames.pth}"
@@ -46,9 +48,16 @@ echo "gpus=$GPU_IDS"
 echo "config=$CONFIG_PATH"
 echo "batch_size=$BATCH_SIZE"
 echo "accum=$ACCUM"
+echo "num_workers=$NUM_WORKERS"
+echo "max_epochs=${MAX_EPOCHS:-default}"
 echo "vq_ckpt=$VQ_CKPT"
 echo "rvrt_root=$RVRT_ROOT"
 echo "rvrt_ckpt=$RVRT_CKPT"
+
+TRAINER_DOTLIST=()
+if [[ -n "$MAX_EPOCHS" ]]; then
+  TRAINER_DOTLIST+=("lightning.trainer.max_epochs=$MAX_EPOCHS")
+fi
 
 "$PYTHON_BIN" -u main.py \
   --base "$CONFIG_PATH" \
@@ -56,7 +65,9 @@ echo "rvrt_ckpt=$RVRT_CKPT"
   --gpus "$GPU_IDS" \
   --logdir "$LOGDIR" \
   data.params.batch_size="$BATCH_SIZE" \
+  data.params.num_workers="$NUM_WORKERS" \
   lightning.trainer.accumulate_grad_batches="$ACCUM" \
+  "${TRAINER_DOTLIST[@]}" \
   model.params.first_stage_config.params.ckpt_path="$VQ_CKPT" \
   model.params.rvrt_root="$RVRT_ROOT" \
   model.params.rvrt_ckpt="$RVRT_CKPT"

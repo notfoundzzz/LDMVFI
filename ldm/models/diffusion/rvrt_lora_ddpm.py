@@ -3,6 +3,7 @@ from torch.optim.lr_scheduler import LambdaLR
 
 from ldm.models.diffusion.ddpm import LatentDiffusionVFI
 from ldm.models.rvrt_frontend import build_sr_frontend
+from ldm.modules.ema import LitEma
 from ldm.modules.lora import inject_lora_modules, lora_parameters
 from ldm.util import instantiate_from_config
 
@@ -54,6 +55,10 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
         print(f"Injected LoRA into {len(self.lora_targets)} modules")
         if len(self.lora_targets) == 0:
             raise RuntimeError("No LoRA target modules were found in diffusion model")
+        if self.use_ema:
+            # Rebuild EMA after LoRA injection/freeze so it tracks only current
+            # trainable parameters and does not retain stale parameter names.
+            self.model_ema = LitEma(self.model)
 
     def on_fit_start(self):
         super().on_fit_start()
