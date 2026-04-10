@@ -9,7 +9,7 @@ import ldm.data.vfitransforms as vt
 from functools import partial
 
 class Vimeo90k_triplet(Dataset):
-    def __init__(self, db_dir, train=True,  crop_sz=(256,256), augment_s=True, augment_t=True):
+    def __init__(self, db_dir, train=True,  crop_sz=(256,256), augment_s=True, augment_t=True, **kwargs):
         seq_dir = join(db_dir, 'sequences')
         self.crop_sz = crop_sz
         self.augment_s = augment_s
@@ -54,7 +54,7 @@ class Vimeo90k_triplet(Dataset):
 
 
 class Vimeo90k_quintuplet(Dataset):
-    def __init__(self, db_dir, train=True,  crop_sz=(256,256), augment_s=True, augment_t=True):
+    def __init__(self, db_dir, train=True,  crop_sz=(256,256), augment_s=True, augment_t=True, **kwargs):
         seq_dir = join(db_dir, 'sequences')
         self.crop_sz = crop_sz
         self.augment_s = augment_s
