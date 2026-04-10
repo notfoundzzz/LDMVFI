@@ -11,6 +11,9 @@ from torch.utils.data import DataLoader, Dataset
 from functools import partial
 from PIL import Image
 
+if not hasattr(Image, "ANTIALIAS") and hasattr(Image, "Resampling"):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
+
 from pytorch_lightning import seed_everything
 from pytorch_lightning.trainer import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, Callback, LearningRateMonitor
