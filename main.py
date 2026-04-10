@@ -439,7 +439,14 @@ class ImageLogger(Callback):
     def on_validation_epoch_end(self, trainer, pl_module):
         if len(self.val_psnr_epoch) > 0:
             epoch_psnr = torch.cat(self.val_psnr_epoch).mean().item()
-            pl_module.log_dict({'val/psnr':epoch_psnr}, prog_bar=False, logger=True, on_step=False, on_epoch=True)
+            pl_module.log_dict(
+                {'val/psnr': epoch_psnr},
+                prog_bar=False,
+                logger=True,
+                on_step=False,
+                on_epoch=True,
+                sync_dist=True,
+            )
             self.val_psnr_epoch = []
 
 class CUDACallback(Callback):
@@ -542,6 +549,19 @@ if __name__ == "__main__":
             print(f"Running on GPUs {gpuinfo}")
             cpu = False
         trainer_config['devices'] = trainer_config.pop('gpus')
+        devices_cfg = trainer_config["devices"]
+        if not cpu and "strategy" not in trainer_config:
+            if isinstance(devices_cfg, int):
+                uses_multiple_devices = devices_cfg > 1
+            elif isinstance(devices_cfg, str):
+                uses_multiple_devices = len([d for d in devices_cfg.strip(",").split(",") if d != ""]) > 1
+            else:
+                try:
+                    uses_multiple_devices = len(devices_cfg) > 1
+                except TypeError:
+                    uses_multiple_devices = False
+            if uses_multiple_devices:
+                trainer_config["strategy"] = "ddp_find_unused_parameters_false"
         trainer_opt = argparse.Namespace(**trainer_config)
         lightning_config.trainer = trainer_config
 

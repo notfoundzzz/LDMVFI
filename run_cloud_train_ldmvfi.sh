@@ -19,6 +19,7 @@ DATA_ROOT="${DATA_ROOT:-/data/Shenzhen/zzff/STVSR/data}"
 LOGDIR="${LOGDIR:-$ROOT_DIR/logs}"
 BATCH_SIZE="${BATCH_SIZE:-64}"
 ACCUM="${ACCUM:-1}"
+NUM_WORKERS="${NUM_WORKERS:-8}"
 VQ_CKPT="${VQ_CKPT:-}"
 USE_BVIDVC="${USE_BVIDVC:-auto}"
 
@@ -38,6 +39,7 @@ echo "gpus=$GPU_IDS" | tee -a "$LOG_FILE"
 echo "data_root=$DATA_ROOT" | tee -a "$LOG_FILE"
 echo "batch_size=$BATCH_SIZE" | tee -a "$LOG_FILE"
 echo "accum=$ACCUM" | tee -a "$LOG_FILE"
+echo "num_workers=$NUM_WORKERS" | tee -a "$LOG_FILE"
 echo "vq_ckpt=$VQ_CKPT" | tee -a "$LOG_FILE"
 echo "use_bvidvc=$USE_BVIDVC" | tee -a "$LOG_FILE"
 
@@ -72,6 +74,7 @@ fi
   --gpus "$GPU_IDS" \
   --logdir "$LOGDIR" \
   data.params.batch_size="$BATCH_SIZE" \
+  data.params.num_workers="$NUM_WORKERS" \
   lightning.trainer.accumulate_grad_batches="$ACCUM" \
   "${TRAIN_DOTLIST[@]}" \
   data.params.validation.params.db_dir="$DATA_ROOT/vimeo_septuplet" \
