@@ -861,11 +861,12 @@ class LatentDiffusion(DDPM):
                                   mask=mask, x0=x0)
 
     @torch.no_grad()
-    def sample_log(self,cond,batch_size,ddim, ddim_steps,**kwargs):
+    def sample_log(self,cond,batch_size,ddim, ddim_steps,shape=None,**kwargs):
 
         if ddim:
             ddim_sampler = DDIMSampler(self)
-            shape = (self.channels, self.image_size, self.image_size)
+            if shape is None:
+                shape = (self.channels, self.image_size, self.image_size)
             samples, intermediates =ddim_sampler.sample(ddim_steps,batch_size,
                                                         shape,cond,verbose=False,**kwargs)
 
@@ -891,6 +892,7 @@ class LatentDiffusion(DDPM):
                                            bs=N)
         N = min(x.shape[0], N)
         n_row = min(x.shape[0], n_row)
+        latent_shape = tuple(z.shape[1:])
         log["inputs"] = x
         log["reconstruction"] = xrec
         if self.model.conditioning_key is not None:
@@ -1663,11 +1665,12 @@ class LatentDiffusionVFI(DDPM):
                                   mask=mask, x0=x0)
 
     @torch.no_grad()
-    def sample_log(self,cond,batch_size,ddim, ddim_steps,**kwargs):
+    def sample_log(self,cond,batch_size,ddim, ddim_steps,shape=None,**kwargs):
 
         if ddim:
             ddim_sampler = DDIMSampler(self)
-            shape = (self.channels, self.image_size, self.image_size)
+            if shape is None:
+                shape = (self.channels, self.image_size, self.image_size)
             samples, intermediates =ddim_sampler.sample(ddim_steps,batch_size,
                                                         shape,cond,verbose=False,**kwargs)
 
@@ -1695,6 +1698,7 @@ class LatentDiffusionVFI(DDPM):
                                            bs=N)
         N = min(x.shape[0], N)
         n_row = min(x.shape[0], n_row)
+        latent_shape = tuple(z.shape[1:])
         log["inputs"] = x
         log["reconstruction"] = xrec
 
@@ -1720,7 +1724,8 @@ class LatentDiffusionVFI(DDPM):
             # get denoise row
             with self.ema_scope("Plotting"):
                 samples, z_denoise_row = self.sample_log(cond=c,batch_size=N,ddim=use_ddim,
-                                                         ddim_steps=ddim_steps,eta=ddim_eta, x_T=None)
+                                                         ddim_steps=ddim_steps,eta=ddim_eta, x_T=None,
+                                                         shape=latent_shape)
                 # samples, z_denoise_row = self.sample(cond=c, batch_size=N, return_intermediates=True)
             x_samples = self.decode_first_stage(samples, xc, phi_prev_list, phi_next_list)
             log["samples"] = x_samples
@@ -1736,7 +1741,8 @@ class LatentDiffusionVFI(DDPM):
                 with self.ema_scope("Plotting Quantized Denoised"):
                     samples, z_denoise_row = self.sample_log(cond=c,batch_size=N,ddim=use_ddim,
                                                              ddim_steps=ddim_steps,eta=ddim_eta,
-                                                             quantize_denoised=True, x_T=None)
+                                                             quantize_denoised=True, x_T=None,
+                                                             shape=latent_shape)
                     # samples, z_denoise_row = self.sample(cond=c, batch_size=N, return_intermediates=True,
                     #                                      quantize_denoised=True)
                 x_samples = self.decode_first_stage(samples.to(self.device), xc, phi_prev_list, phi_next_list)
@@ -1745,7 +1751,7 @@ class LatentDiffusionVFI(DDPM):
         if plot_progressive_rows:
             with self.ema_scope("Plotting Progressives"):
                 img, progressives = self.progressive_denoising(c,
-                                                               shape=(self.channels, self.image_size, self.image_size),
+                                                               shape=latent_shape,
                                                                batch_size=N, x_T=None)
             prog_row = self._get_denoise_row_from_list(progressives, 
                                                        xc,
