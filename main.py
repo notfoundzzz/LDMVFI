@@ -294,8 +294,11 @@ class SetupCallback(Callback):
                            os.path.join(self.cfgdir, "{}-lightning.yaml".format(self.now)))
 
         else:
-            # ModelCheckpoint callback created log directory --- remove it
-            if not self.resume and os.path.exists(self.logdir):
+            # In DDP, non-zero ranks share the same logdir and must not move it away.
+            uses_multiple_ranks = getattr(trainer, "world_size", 1) > 1
+            # ModelCheckpoint callback created log directory --- remove it only for
+            # single-process child runs that should not reuse the parent's logdir.
+            if not uses_multiple_ranks and not self.resume and os.path.exists(self.logdir):
                 dst, name = os.path.split(self.logdir)
                 dst = os.path.join(dst, "child_runs", name)
                 os.makedirs(os.path.split(dst)[0], exist_ok=True)
