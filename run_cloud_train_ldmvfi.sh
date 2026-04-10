@@ -44,8 +44,8 @@ echo "vq_ckpt=$VQ_CKPT" | tee -a "$LOG_FILE"
   -t \
   --gpus "$GPU_IDS" \
   --logdir "$LOGDIR" \
-  --data.params.batch_size "$BATCH_SIZE" \
-  --lightning.trainer.accumulate_grad_batches "$ACCUM" \
-  --data.params.train.params.db_dir "$DATA_ROOT" \
-  --data.params.validation.params.db_dir "$DATA_ROOT/vimeo_septuplet" \
-  --model.params.first_stage_config.params.ckpt_path "$VQ_CKPT" 2>&1 | tee -a "$LOG_FILE"
+  data.params.batch_size="$BATCH_SIZE" \
+  lightning.trainer.accumulate_grad_batches="$ACCUM" \
+  data.params.train.params.db_dir="$DATA_ROOT" \
+  data.params.validation.params.db_dir="$DATA_ROOT/vimeo_septuplet" \
+  model.params.first_stage_config.params.ckpt_path="$VQ_CKPT" 2>&1 | tee -a "$LOG_FILE"

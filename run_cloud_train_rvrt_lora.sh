@@ -55,8 +55,8 @@ echo "rvrt_ckpt=$RVRT_CKPT"
   -t \
   --gpus "$GPU_IDS" \
   --logdir "$LOGDIR" \
-  --data.params.batch_size "$BATCH_SIZE" \
-  --lightning.trainer.accumulate_grad_batches "$ACCUM" \
-  --model.params.first_stage_config.params.ckpt_path "$VQ_CKPT" \
-  --model.params.rvrt_root "$RVRT_ROOT" \
-  --model.params.rvrt_ckpt "$RVRT_CKPT"
+  data.params.batch_size="$BATCH_SIZE" \
+  lightning.trainer.accumulate_grad_batches="$ACCUM" \
+  model.params.first_stage_config.params.ckpt_path="$VQ_CKPT" \
+  model.params.rvrt_root="$RVRT_ROOT" \
+  model.params.rvrt_ckpt="$RVRT_CKPT"
