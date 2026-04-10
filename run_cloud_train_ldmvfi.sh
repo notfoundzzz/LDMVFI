@@ -15,7 +15,7 @@ else
   PYTHON_BIN="${PYTHON_BIN:-python}"
 fi
 GPU_IDS="${GPU_IDS:-0,}"
-DATA_ROOT="${DATA_ROOT:-/data/Shenzhen/zhahongli/datasets/ldmvfi}"
+DATA_ROOT="${DATA_ROOT:-/data/Shenzhen/zzff/STVSR/data}"
 LOGDIR="${LOGDIR:-$ROOT_DIR/logs}"
 BATCH_SIZE="${BATCH_SIZE:-64}"
 ACCUM="${ACCUM:-1}"
