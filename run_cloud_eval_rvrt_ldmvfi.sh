@@ -19,7 +19,8 @@ if [ -d "$PYTHON_DIR" ]; then
   export PATH="$PYTHON_DIR:$PATH"
 fi
 LDM_CONFIG="${LDM_CONFIG:-$ROOT_DIR/configs/ldm/ldmvfi-vqflow-f32-c256-concat_max.yaml}"
-LDM_CKPT="${LDM_CKPT:-/data/Shenzhen/zhahongli/models/ldmvfi/ldmvfi-vqflow-f32-c256-concat_max.ckpt}"
+BASELINE_LDM_CKPT="/data/Shenzhen/zhahongli/models/ldmvfi/ldmvfi-vqflow-f32-c256-concat_max.ckpt"
+LDM_CKPT="${LDM_CKPT:-$BASELINE_LDM_CKPT}"
 DATA_ROOT="${DATA_ROOT:-/data/Shenzhen/zzff/STVSR/data/vimeo_septuplet}"
 DATASET_ROOT_HR="${DATASET_ROOT_HR:-$DATA_ROOT/sequences}"
 DATASET_ROOT_LR="${DATASET_ROOT_LR:-$DATA_ROOT/sequences_LR}"
@@ -37,6 +38,17 @@ ADAPTER_SCALE="${ADAPTER_SCALE:-1.0}"
 MAX_SAMPLES="${MAX_SAMPLES:-0}"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/eval_results_rvrt_ldmvfi/${SPLIT}/${SR_MODE}}"
 LOG_ROOT="${LOG_ROOT:-$ROOT_DIR/logs}"
+
+if [[ ! -f "$LDM_CKPT" ]]; then
+  echo "LDM_CKPT not found: $LDM_CKPT"
+  exit 1
+fi
+
+if [[ "$ADAPTER_MODE" != "none" && "$LDM_CKPT" == "$BASELINE_LDM_CKPT" ]]; then
+  echo "ADAPTER_MODE=$ADAPTER_MODE requires an adapter-trained checkpoint."
+  echo "Set LDM_CKPT to a checkpoint produced by run_cloud_train_rvrt_lora.sh."
+  exit 1
+fi
 
 mkdir -p "$LOG_ROOT"
 STAMP="$(date +%Y%m%d_%H%M%S)"

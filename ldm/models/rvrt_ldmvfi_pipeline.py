@@ -48,8 +48,24 @@ class RVRTLDMVFIPipeline:
 
         self.model = instantiate_from_config(ldm_config.model)
         state = torch.load(ldm_ckpt, map_location="cpu")
-        self.model.load_state_dict(state["state_dict"] if "state_dict" in state else state, strict=False)
+        state_dict = state["state_dict"] if "state_dict" in state else state
+        self.model.load_state_dict(state_dict, strict=False)
         self.model = self.model.to(self.device).eval()
+        if self.condition_adapter is not None:
+            adapter_state = {
+                key.removeprefix("condition_adapter."): value
+                for key, value in state_dict.items()
+                if key.startswith("condition_adapter.")
+            }
+            if not adapter_state:
+                raise RuntimeError(
+                    "Adapter mode is enabled, but checkpoint does not contain condition_adapter weights."
+                )
+            missing, unexpected = self.condition_adapter.load_state_dict(adapter_state, strict=False)
+            if missing or unexpected:
+                raise RuntimeError(
+                    f"Adapter checkpoint mismatch, missing={missing}, unexpected={unexpected}"
+                )
 
     @torch.no_grad()
     def super_resolve_neighbors(self, prev_lr, next_lr):

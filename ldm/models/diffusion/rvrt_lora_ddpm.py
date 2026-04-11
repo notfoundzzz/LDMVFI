@@ -1,5 +1,6 @@
 import torch
 from torch.optim.lr_scheduler import LambdaLR
+from contextlib import contextmanager
 
 from ldm.models.diffusion.ddpm import LatentDiffusionVFI
 from ldm.models.rvrt_frontend import build_sr_frontend
@@ -75,6 +76,27 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
             # Rebuild EMA after LoRA injection/freeze so it tracks only current
             # trainable parameters and does not retain stale parameter names.
             self.model_ema = LitEma(self.model)
+            self.adapter_ema = LitEma(self.condition_adapter) if self.condition_adapter is not None else None
+
+    @contextmanager
+    def ema_scope(self, context=None):
+        if self.use_ema:
+            self.model_ema.store(self.model.parameters())
+            self.model_ema.copy_to(self.model)
+            if self.adapter_ema is not None:
+                self.adapter_ema.store(self.condition_adapter.parameters())
+                self.adapter_ema.copy_to(self.condition_adapter)
+            if context is not None:
+                print(f"{context}: Switched to EMA weights")
+        try:
+            yield None
+        finally:
+            if self.use_ema:
+                self.model_ema.restore(self.model.parameters())
+                if self.adapter_ema is not None:
+                    self.adapter_ema.restore(self.condition_adapter.parameters())
+                if context is not None:
+                    print(f"{context}: Restored training weights")
 
     def on_fit_start(self):
         super().on_fit_start()
@@ -96,7 +118,6 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
         next_sr = torch.clamp(out[:, 1] * 2.0 - 1.0, min=-1.0, max=1.0)
         return prev_sr, next_sr
 
-    @torch.no_grad()
     def get_input(
         self,
         batch,
@@ -116,7 +137,8 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
         encoder_posterior = self.encode_first_stage(x)
         z = self.get_first_stage_encoding(encoder_posterior).detach()
 
-        prev_sr, next_sr = self._super_resolve_neighbors(batch, bs=bs)
+        with torch.no_grad():
+            prev_sr, next_sr = self._super_resolve_neighbors(batch, bs=bs)
         xc = {self.cond_prev_key: prev_sr, self.cond_next_key: next_sr}
         c, phi_prev_list, phi_next_list = self.get_learned_conditioning(xc)
         if self.condition_adapter is not None:
@@ -132,6 +154,11 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
             out.append(phi_prev_list)
             out.append(phi_next_list)
         return out
+
+    def on_train_batch_end(self, *args, **kwargs):
+        super().on_train_batch_end(*args, **kwargs)
+        if self.use_ema and self.adapter_ema is not None:
+            self.adapter_ema(self.condition_adapter)
 
     def configure_optimizers(self):
         lr = self.learning_rate
