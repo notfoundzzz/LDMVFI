@@ -20,7 +20,7 @@ if [ -d "$PYTHON_DIR" ]; then
 fi
 
 GPU_IDS="${GPU_IDS:-0,}"
-CONFIG_PATH="${CONFIG_PATH:-configs/ldm/rvrt-lora-stsr-x4.yaml}"
+CONFIG_PATH="${CONFIG_PATH:-configs/ldm/rvrt-adapter-lora-stsr-x4.yaml}"
 LOGDIR="${LOGDIR:-$ROOT_DIR/logs}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
 ACCUM="${ACCUM:-1}"
@@ -29,6 +29,10 @@ MAX_EPOCHS="${MAX_EPOCHS:-}"
 VQ_CKPT="${VQ_CKPT:-/data/Shenzhen/zhahongli/models/ldmvfi/vqflow-extracted.ckpt}"
 RVRT_ROOT="${RVRT_ROOT:-/data/Shenzhen/zhahongli/RVRT}"
 RVRT_CKPT="${RVRT_CKPT:-$RVRT_ROOT/model_zoo/rvrt/002_RVRT_videosr_bi_Vimeo_14frames.pth}"
+ADAPTER_MODE="${ADAPTER_MODE:-sr_residual}"
+ADAPTER_HIDDEN_CHANNELS="${ADAPTER_HIDDEN_CHANNELS:-32}"
+ADAPTER_RES_BLOCKS="${ADAPTER_RES_BLOCKS:-2}"
+ADAPTER_SCALE="${ADAPTER_SCALE:-1.0}"
 
 if [[ -z "$VQ_CKPT" || ! -f "$VQ_CKPT" ]]; then
   echo "VQ_CKPT is required"
@@ -53,6 +57,10 @@ echo "max_epochs=${MAX_EPOCHS:-default}"
 echo "vq_ckpt=$VQ_CKPT"
 echo "rvrt_root=$RVRT_ROOT"
 echo "rvrt_ckpt=$RVRT_CKPT"
+echo "adapter_mode=$ADAPTER_MODE"
+echo "adapter_hidden_channels=$ADAPTER_HIDDEN_CHANNELS"
+echo "adapter_res_blocks=$ADAPTER_RES_BLOCKS"
+echo "adapter_scale=$ADAPTER_SCALE"
 
 TRAINER_DOTLIST=()
 if [[ -n "$MAX_EPOCHS" ]]; then
@@ -70,4 +78,8 @@ fi
   "${TRAINER_DOTLIST[@]}" \
   model.params.first_stage_config.params.ckpt_path="$VQ_CKPT" \
   model.params.rvrt_root="$RVRT_ROOT" \
-  model.params.rvrt_ckpt="$RVRT_CKPT"
+  model.params.rvrt_ckpt="$RVRT_CKPT" \
+  model.params.adapter_mode="$ADAPTER_MODE" \
+  model.params.adapter_hidden_channels="$ADAPTER_HIDDEN_CHANNELS" \
+  model.params.adapter_res_blocks="$ADAPTER_RES_BLOCKS" \
+  model.params.adapter_scale="$ADAPTER_SCALE"

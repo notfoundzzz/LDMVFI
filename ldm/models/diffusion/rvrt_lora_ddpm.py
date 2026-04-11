@@ -3,6 +3,7 @@ from torch.optim.lr_scheduler import LambdaLR
 
 from ldm.models.diffusion.ddpm import LatentDiffusionVFI
 from ldm.models.rvrt_frontend import build_sr_frontend
+from ldm.modules.condition_adapter import SRConditionAdapter
 from ldm.modules.ema import LitEma
 from ldm.modules.lora import inject_lora_modules, lora_parameters
 from ldm.util import instantiate_from_config
@@ -16,6 +17,10 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
         rvrt_ckpt=None,
         rvrt_tile=(0, 0, 0),
         rvrt_tile_overlap=(2, 20, 20),
+        adapter_mode="none",
+        adapter_hidden_channels=32,
+        adapter_res_blocks=2,
+        adapter_scale=1.0,
         lora_rank=8,
         lora_alpha=16.0,
         lr_prev_key="prev_frame_lr",
@@ -30,6 +35,7 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
         self.lr_next_key = lr_next_key
         self.cond_prev_key = cond_prev_key
         self.cond_next_key = cond_next_key
+        self.adapter_mode = adapter_mode
 
         self.rvrt_frontend = build_sr_frontend(
             sr_mode="rvrt",
@@ -55,6 +61,16 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
         print(f"Injected LoRA into {len(self.lora_targets)} modules")
         if len(self.lora_targets) == 0:
             raise RuntimeError("No LoRA target modules were found in diffusion model")
+        cond_channels = self.channels * 2
+        self.condition_adapter = None
+        if self.adapter_mode == "sr_residual":
+            self.condition_adapter = SRConditionAdapter(
+                in_channels=9,
+                cond_channels=cond_channels,
+                hidden_channels=adapter_hidden_channels,
+                num_res_blocks=adapter_res_blocks,
+                scale=adapter_scale,
+            )
         if self.use_ema:
             # Rebuild EMA after LoRA injection/freeze so it tracks only current
             # trainable parameters and does not retain stale parameter names.
@@ -103,6 +119,8 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
         prev_sr, next_sr = self._super_resolve_neighbors(batch, bs=bs)
         xc = {self.cond_prev_key: prev_sr, self.cond_next_key: next_sr}
         c, phi_prev_list, phi_next_list = self.get_learned_conditioning(xc)
+        if self.condition_adapter is not None:
+            c = c + self.condition_adapter(prev_sr, next_sr, target_hw=(c.shape[-2], c.shape[-1]))
 
         out = [z, c]
         if return_first_stage_outputs:
@@ -118,6 +136,8 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
     def configure_optimizers(self):
         lr = self.learning_rate
         params = list(lora_parameters(self.model))
+        if self.condition_adapter is not None:
+            params.extend(self.condition_adapter.parameters())
         if self.learn_logvar:
             params.append(self.logvar)
         if not params:

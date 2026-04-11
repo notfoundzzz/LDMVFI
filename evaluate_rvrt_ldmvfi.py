@@ -92,6 +92,10 @@ def main():
     parser.add_argument("--rvrt_root", default=None)
     parser.add_argument("--rvrt_task", default="002_RVRT_videosr_bi_Vimeo_14frames")
     parser.add_argument("--rvrt_ckpt", default=None)
+    parser.add_argument("--adapter_mode", choices=["none", "sr_residual"], default="none")
+    parser.add_argument("--adapter_hidden_channels", type=int, default=32)
+    parser.add_argument("--adapter_res_blocks", type=int, default=2)
+    parser.add_argument("--adapter_scale", type=float, default=1.0)
     parser.add_argument("--use_ddim", action="store_true")
     parser.add_argument("--ddim_steps", type=int, default=200)
     parser.add_argument("--ddim_eta", type=float, default=1.0)
@@ -110,6 +114,10 @@ def main():
         rvrt_root=args.rvrt_root,
         rvrt_task=args.rvrt_task,
         rvrt_ckpt=args.rvrt_ckpt,
+        adapter_mode=args.adapter_mode,
+        adapter_hidden_channels=args.adapter_hidden_channels,
+        adapter_res_blocks=args.adapter_res_blocks,
+        adapter_scale=args.adapter_scale,
     )
     results = {metric: [] for metric in args.metrics}
     dataset_root_hr = args.dataset_root_hr
@@ -128,7 +136,7 @@ def main():
         hr_folder = join(dataset_root_hr, *name.split("/"))
         _, gt, _ = load_triplet(hr_folder, transform)
         with torch.no_grad():
-            out, prev_sr, next_sr = pipeline.interpolate(
+            out, prev_sr, next_sr, adapter_summary = pipeline.interpolate(
                 prev_lr,
                 next_lr,
                 use_ddim=args.use_ddim,
@@ -141,6 +149,9 @@ def main():
         save_image(out, join(item_dir, "output.png"), value_range=(-1, 1), normalize=True)
         save_image(prev_sr, join(item_dir, "prev_sr.png"), value_range=(-1, 1), normalize=True)
         save_image(next_sr, join(item_dir, "next_sr.png"), value_range=(-1, 1), normalize=True)
+        if adapter_summary is not None:
+            adapter_vis = adapter_summary / adapter_summary.amax(dim=(2, 3), keepdim=True).clamp_min(1e-6)
+            save_image(adapter_vis, join(item_dir, "adapter_delta.png"), value_range=(0, 1), normalize=False)
 
         gt_eval, out_eval, prev_eval, next_eval = align_for_metrics(
             gt.to(pipeline.device),

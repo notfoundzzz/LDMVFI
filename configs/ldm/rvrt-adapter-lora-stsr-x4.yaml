@@ -1,0 +1,95 @@
+model:
+  base_learning_rate: 1.0e-04
+  target: ldm.models.diffusion.rvrt_lora_ddpm.LatentDiffusionVFIRVRTLoRA
+  params:
+    linear_start: 0.0015
+    linear_end: 0.0195
+    num_timesteps_cond: 1
+    log_every_t: 200
+    timesteps: 1000
+    first_stage_key: image
+    cond_stage_key: past_future_frames
+    image_size: 8
+    channels: 3
+    cond_stage_trainable: False
+    concat_mode: True
+    monitor: val/loss_simple_ema
+    rvrt_root: /data/Shenzhen/zhahongli/RVRT
+    rvrt_task: 002_RVRT_videosr_bi_Vimeo_14frames
+    rvrt_ckpt: /data/Shenzhen/zhahongli/RVRT/model_zoo/rvrt/002_RVRT_videosr_bi_Vimeo_14frames.pth
+    adapter_mode: sr_residual
+    adapter_hidden_channels: 32
+    adapter_res_blocks: 2
+    adapter_scale: 1.0
+    lora_rank: 8
+    lora_alpha: 16.0
+    unet_config:
+      target: ldm.modules.diffusionmodules.openaimodel.UNetModel
+      params:
+        image_size: 8
+        in_channels: 9
+        out_channels: 3
+        model_channels: 256
+        attention_resolutions: [4, 2, 1]
+        num_res_blocks: 2
+        channel_mult: [1, 2, 4]
+        num_head_channels: 32
+        use_max_self_attn: True
+    first_stage_config:
+      target: ldm.models.autoencoder.VQFlowNetInterface
+      params:
+        ckpt_path: null
+        embed_dim: 3
+        n_embed: 8192
+        ddconfig:
+          double_z: False
+          z_channels: 3
+          resolution: 256
+          in_channels: 3
+          out_ch: 3
+          ch: 64
+          ch_mult: [1, 2, 2, 2, 4]
+          num_res_blocks: 1
+          cond_type: max_cross_attn
+          attn_type: max
+          attn_resolutions: []
+          dropout: 0.0
+        lossconfig:
+          target: torch.nn.Identity
+    cond_stage_config: __is_first_stage__
+
+data:
+  target: main.DataModuleFromConfig
+  params:
+    batch_size: 4
+    num_workers: 4
+    wrap: false
+    train:
+      target: ldm.data.vimeo_stsr_lora.Vimeo90kTripletSTSRLoRA
+      params:
+        db_dir_hr: /data/Shenzhen/zzff/STVSR/data/vimeo_septuplet/sequences
+        db_dir_lr: /data/Shenzhen/zzff/STVSR/data/vimeo_septuplet/sequences_LR
+        list_file: /data/Shenzhen/zzff/STVSR/data/vimeo_septuplet/sep_trainlist.txt
+        split: train
+    validation:
+      target: ldm.data.vimeo_stsr_lora.Vimeo90kTripletSTSRLoRA
+      params:
+        db_dir_hr: /data/Shenzhen/zzff/STVSR/data/vimeo_septuplet/sequences
+        db_dir_lr: /data/Shenzhen/zzff/STVSR/data/vimeo_septuplet/sequences_LR
+        list_file: /data/Shenzhen/zzff/STVSR/data/vimeo_septuplet/sep_slow_testlist.txt
+        split: slow_test
+        max_samples: 100
+
+lightning:
+  callbacks:
+    image_logger:
+      target: main.ImageLogger
+      params:
+        batch_frequency: 250
+        val_batch_frequency: 50
+        max_images: 4
+        increase_log_steps: False
+        log_images_kwargs: {N: 1}
+  trainer:
+    benchmark: True
+    max_epochs: -1

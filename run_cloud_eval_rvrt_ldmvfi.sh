@@ -30,6 +30,10 @@ SR_MODE="${SR_MODE:-bicubic}"
 RVRT_ROOT="${RVRT_ROOT:-/data/Shenzhen/zhahongli/RVRT}"
 RVRT_TASK="${RVRT_TASK:-002_RVRT_videosr_bi_Vimeo_14frames}"
 RVRT_CKPT="${RVRT_CKPT:-$RVRT_ROOT/model_zoo/rvrt/${RVRT_TASK}.pth}"
+ADAPTER_MODE="${ADAPTER_MODE:-none}"
+ADAPTER_HIDDEN_CHANNELS="${ADAPTER_HIDDEN_CHANNELS:-32}"
+ADAPTER_RES_BLOCKS="${ADAPTER_RES_BLOCKS:-2}"
+ADAPTER_SCALE="${ADAPTER_SCALE:-1.0}"
 MAX_SAMPLES="${MAX_SAMPLES:-0}"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/eval_results_rvrt_ldmvfi/${SPLIT}/${SR_MODE}}"
 LOG_ROOT="${LOG_ROOT:-$ROOT_DIR/logs}"
@@ -56,6 +60,10 @@ echo "sr_mode=$SR_MODE"
 echo "rvrt_root=$RVRT_ROOT"
 echo "rvrt_task=$RVRT_TASK"
 echo "rvrt_ckpt=$RVRT_CKPT"
+echo "adapter_mode=$ADAPTER_MODE"
+echo "adapter_hidden_channels=$ADAPTER_HIDDEN_CHANNELS"
+echo "adapter_res_blocks=$ADAPTER_RES_BLOCKS"
+echo "adapter_scale=$ADAPTER_SCALE"
 echo "max_samples=$MAX_SAMPLES"
 
 CMD=(
@@ -71,6 +79,10 @@ CMD=(
   --rvrt_root "$RVRT_ROOT" \
   --rvrt_task "$RVRT_TASK" \
   --rvrt_ckpt "$RVRT_CKPT" \
+  --adapter_mode "$ADAPTER_MODE" \
+  --adapter_hidden_channels "$ADAPTER_HIDDEN_CHANNELS" \
+  --adapter_res_blocks "$ADAPTER_RES_BLOCKS" \
+  --adapter_scale "$ADAPTER_SCALE" \
   --max_samples "$MAX_SAMPLES" \
   --use_ddim
 )
