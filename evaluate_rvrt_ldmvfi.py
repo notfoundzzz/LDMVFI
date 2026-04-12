@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 from os.path import join
 
@@ -101,6 +102,7 @@ def main():
     parser.add_argument("--ddim_eta", type=float, default=1.0)
     parser.add_argument("--metrics", nargs="+", default=["PSNR", "SSIM"])
     parser.add_argument("--max_samples", type=int, default=0)
+    parser.add_argument("--summary_json", default=None)
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -166,7 +168,16 @@ def main():
             metrics_msg[metric] = round(score, 3)
         print(name, metrics_msg)
 
-    print("Average", {metric: round(float(np.mean(scores)), 3) for metric, scores in results.items()})
+    average = {metric: round(float(np.mean(scores)), 3) for metric, scores in results.items()}
+    print("Average", average)
+    if args.summary_json:
+        summary = {
+            "split": args.split,
+            "num_samples": len(triplet_folders),
+            "average": average,
+        }
+        with open(args.summary_json, "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=2, ensure_ascii=True)
 
 
 if __name__ == "__main__":

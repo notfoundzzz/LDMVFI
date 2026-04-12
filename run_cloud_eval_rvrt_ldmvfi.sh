@@ -18,6 +18,7 @@ PYTHON_DIR="$(dirname "$PYTHON_BIN")"
 if [ -d "$PYTHON_DIR" ]; then
   export PATH="$PYTHON_DIR:$PATH"
 fi
+GPU_ID="${GPU_ID:-}"
 LDM_CONFIG="${LDM_CONFIG:-$ROOT_DIR/configs/ldm/ldmvfi-vqflow-f32-c256-concat_max.yaml}"
 BASELINE_LDM_CKPT="/data/Shenzhen/zhahongli/models/ldmvfi/ldmvfi-vqflow-f32-c256-concat_max.ckpt"
 LDM_CKPT="${LDM_CKPT:-$BASELINE_LDM_CKPT}"
@@ -25,6 +26,7 @@ DATA_ROOT="${DATA_ROOT:-/data/Shenzhen/zzff/STVSR/data/vimeo_septuplet}"
 DATASET_ROOT_HR="${DATASET_ROOT_HR:-$DATA_ROOT/sequences}"
 DATASET_ROOT_LR="${DATASET_ROOT_LR:-$DATA_ROOT/sequences_LR}"
 SPLIT="${SPLIT:-slow_test}"
+SPLITS="${SPLITS:-$SPLIT}"
 LIST_FILE="${LIST_FILE:-}"
 SCALE="${SCALE:-4}"
 SR_MODE="${SR_MODE:-bicubic}"
@@ -59,12 +61,13 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 echo "root=$ROOT_DIR"
 echo "python=$PYTHON_BIN"
 echo "path=$PATH"
+echo "gpu_id=${GPU_ID:-default}"
 echo "ldm_config=$LDM_CONFIG"
 echo "ldm_ckpt=$LDM_CKPT"
 echo "data_root=$DATA_ROOT"
 echo "dataset_root_hr=$DATASET_ROOT_HR"
 echo "dataset_root_lr=$DATASET_ROOT_LR"
-echo "split=$SPLIT"
+echo "splits=$SPLITS"
 echo "list_file=$LIST_FILE"
 echo "out_dir=$OUT_DIR"
 echo "scale=$SCALE"
@@ -78,29 +81,91 @@ echo "adapter_res_blocks=$ADAPTER_RES_BLOCKS"
 echo "adapter_scale=$ADAPTER_SCALE"
 echo "max_samples=$MAX_SAMPLES"
 
-CMD=(
-  "$PYTHON_BIN" -u evaluate_rvrt_ldmvfi.py
-  --ldm_config "$LDM_CONFIG" \
-  --ldm_ckpt "$LDM_CKPT" \
-  --dataset_root_hr "$DATASET_ROOT_HR" \
-  --dataset_root_lr "$DATASET_ROOT_LR" \
-  --split "$SPLIT" \
-  --out_dir "$OUT_DIR" \
-  --scale "$SCALE" \
-  --sr_mode "$SR_MODE" \
-  --rvrt_root "$RVRT_ROOT" \
-  --rvrt_task "$RVRT_TASK" \
-  --rvrt_ckpt "$RVRT_CKPT" \
-  --adapter_mode "$ADAPTER_MODE" \
-  --adapter_hidden_channels "$ADAPTER_HIDDEN_CHANNELS" \
-  --adapter_res_blocks "$ADAPTER_RES_BLOCKS" \
-  --adapter_scale "$ADAPTER_SCALE" \
-  --max_samples "$MAX_SAMPLES" \
-  --use_ddim
-)
-
-if [ -n "$LIST_FILE" ] && [ -f "$LIST_FILE" ]; then
-  CMD+=(--list_file "$LIST_FILE")
+if [ -n "$GPU_ID" ]; then
+  export CUDA_VISIBLE_DEVICES="$GPU_ID"
 fi
 
-"${CMD[@]}"
+IFS=',' read -r -a SPLIT_ARRAY <<< "$SPLITS"
+SUMMARY_DIR="$OUT_DIR/_summaries"
+mkdir -p "$SUMMARY_DIR"
+
+for SPLIT_NAME in "${SPLIT_ARRAY[@]}"; do
+  SPLIT_NAME="$(echo "$SPLIT_NAME" | xargs)"
+  if [ -z "$SPLIT_NAME" ]; then
+    continue
+  fi
+
+  CURRENT_LIST_FILE="$LIST_FILE"
+  if [ -z "$CURRENT_LIST_FILE" ]; then
+    CURRENT_LIST_FILE="$DATA_ROOT/sep_${SPLIT_NAME}list.txt"
+  fi
+
+  SPLIT_OUT_DIR="$OUT_DIR/$SPLIT_NAME"
+  SUMMARY_JSON="$SUMMARY_DIR/${SPLIT_NAME}.json"
+  echo "==== running split=$SPLIT_NAME ===="
+  echo "split_out_dir=$SPLIT_OUT_DIR"
+  echo "summary_json=$SUMMARY_JSON"
+
+  CMD=(
+    "$PYTHON_BIN" -u evaluate_rvrt_ldmvfi.py
+    --ldm_config "$LDM_CONFIG" \
+    --ldm_ckpt "$LDM_CKPT" \
+    --dataset_root_hr "$DATASET_ROOT_HR" \
+    --dataset_root_lr "$DATASET_ROOT_LR" \
+    --split "$SPLIT_NAME" \
+    --out_dir "$SPLIT_OUT_DIR" \
+    --scale "$SCALE" \
+    --sr_mode "$SR_MODE" \
+    --rvrt_root "$RVRT_ROOT" \
+    --rvrt_task "$RVRT_TASK" \
+    --rvrt_ckpt "$RVRT_CKPT" \
+    --adapter_mode "$ADAPTER_MODE" \
+    --adapter_hidden_channels "$ADAPTER_HIDDEN_CHANNELS" \
+    --adapter_res_blocks "$ADAPTER_RES_BLOCKS" \
+    --adapter_scale "$ADAPTER_SCALE" \
+    --max_samples "$MAX_SAMPLES" \
+    --summary_json "$SUMMARY_JSON" \
+    --use_ddim
+  )
+
+  if [ -n "$CURRENT_LIST_FILE" ] && [ -f "$CURRENT_LIST_FILE" ]; then
+    CMD+=(--list_file "$CURRENT_LIST_FILE")
+  fi
+
+  "${CMD[@]}"
+done
+
+"$PYTHON_BIN" - "$SUMMARY_DIR" <<'PY'
+import json
+import os
+import sys
+
+summary_dir = sys.argv[1]
+summary_paths = sorted(
+    os.path.join(summary_dir, name)
+    for name in os.listdir(summary_dir)
+    if name.endswith(".json")
+)
+if not summary_paths:
+    raise SystemExit("No split summary files were produced.")
+
+summaries = []
+for path in summary_paths:
+    with open(path, "r", encoding="utf-8") as f:
+        summaries.append(json.load(f))
+
+metric_names = list(summaries[0]["average"].keys())
+total_samples = sum(item["num_samples"] for item in summaries)
+overall = {}
+for metric in metric_names:
+    overall[metric] = round(
+        sum(item["average"][metric] * item["num_samples"] for item in summaries) / total_samples,
+        3,
+    )
+
+print("==== split summaries ====")
+for item in summaries:
+    print(item["split"], item["average"], f"samples={item['num_samples']}")
+print("==== overall average ====")
+print(overall, f"samples={total_samples}")
+PY
