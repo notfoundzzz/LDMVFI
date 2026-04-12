@@ -70,6 +70,7 @@ fi
 "$PYTHON_BIN" -u main.py \
   --base "$CONFIG_PATH" \
   -t \
+  --no-test \
   --gpus "$GPU_IDS" \
   --logdir "$LOGDIR" \
   data.params.batch_size="$BATCH_SIZE" \

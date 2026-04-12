@@ -89,7 +89,11 @@ lightning:
         val_batch_frequency: 50
         max_images: 4
         increase_log_steps: False
-        log_images_kwargs: {N: 1}
+        log_images_kwargs:
+          N: 1
+          plot_progressive_rows: False
+          plot_diffusion_rows: False
+          quantize_denoised: False
   trainer:
     benchmark: True
     max_epochs: -1

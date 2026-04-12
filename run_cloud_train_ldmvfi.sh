@@ -78,6 +78,7 @@ fi
 "$PYTHON_BIN" -u main.py \
   --base configs/ldm/ldmvfi-vqflow-f32-c256-concat_max.yaml \
   -t \
+  --no-test \
   --gpus "$GPU_IDS" \
   --logdir "$LOGDIR" \
   data.params.batch_size="$BATCH_SIZE" \
