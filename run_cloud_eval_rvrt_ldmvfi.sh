@@ -36,6 +36,12 @@ RVRT_CKPT="${RVRT_CKPT:-$RVRT_ROOT/model_zoo/rvrt/${RVRT_TASK}.pth}"
 MAX_SAMPLES="${MAX_SAMPLES:-0}"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/eval_results_rvrt_ldmvfi/${SPLIT}/${SR_MODE}}"
 LOG_ROOT="${LOG_ROOT:-$ROOT_DIR/logs}"
+DEFAULT_LORA_CONFIG="$ROOT_DIR/configs/ldm/rvrt-lora-stsr-x4.yaml"
+DEFAULT_BASE_CONFIG="$ROOT_DIR/configs/ldm/ldmvfi-vqflow-f32-c256-concat_max.yaml"
+
+if [[ "$LDM_CONFIG" == "$DEFAULT_BASE_CONFIG" ]] && [[ "$LDM_CKPT" == *"rvrt-lora"* ]]; then
+  LDM_CONFIG="$DEFAULT_LORA_CONFIG"
+fi
 
 mkdir -p "$LOG_ROOT"
 STAMP="$(date +%Y%m%d_%H%M%S)"
@@ -61,6 +67,12 @@ echo "rvrt_root=$RVRT_ROOT"
 echo "rvrt_task=$RVRT_TASK"
 echo "rvrt_ckpt=$RVRT_CKPT"
 echo "max_samples=$MAX_SAMPLES"
+
+if [[ "$LDM_CONFIG" == "$DEFAULT_BASE_CONFIG" ]] && [[ "$LDM_CKPT" == *"rvrt-lora"* ]]; then
+  echo "Refusing to evaluate a LoRA checkpoint with the base LDMVFI config."
+  echo "Set LDM_CONFIG=$DEFAULT_LORA_CONFIG or leave the default config selection enabled."
+  exit 1
+fi
 
 if [ -n "$GPU_ID" ]; then
   export CUDA_VISIBLE_DEVICES="$GPU_ID"

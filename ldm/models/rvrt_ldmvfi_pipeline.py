@@ -33,7 +33,29 @@ class RVRTLDMVFIPipeline:
 
         self.model = instantiate_from_config(ldm_config.model)
         state = torch.load(ldm_ckpt, map_location="cpu")
-        self.model.load_state_dict(state["state_dict"] if "state_dict" in state else state, strict=False)
+        state_dict = state["state_dict"] if "state_dict" in state else state
+        ckpt_has_lora = any("lora_" in key for key in state_dict.keys())
+        model_has_lora = any("lora_" in key for key in self.model.state_dict().keys())
+
+        if ckpt_has_lora and not model_has_lora:
+            raise ValueError(
+                "Checkpoint contains LoRA weights, but the selected config does not instantiate LoRA modules. "
+                "Use configs/ldm/rvrt-lora-stsr-x4.yaml for LoRA checkpoints."
+            )
+
+        missing, unexpected = self.model.load_state_dict(state_dict, strict=False)
+        if unexpected:
+            raise ValueError(
+                "Unexpected checkpoint keys were found while loading the diffusion model. "
+                f"First keys: {unexpected[:10]}"
+            )
+        if model_has_lora:
+            missing_lora = [key for key in missing if "lora_" in key]
+            if missing_lora:
+                raise ValueError(
+                    "Selected config expects LoRA weights, but checkpoint is missing them. "
+                    f"First keys: {missing_lora[:10]}"
+                )
         self.model = self.model.to(self.device).eval()
 
     @torch.no_grad()
