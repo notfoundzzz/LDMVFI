@@ -26,9 +26,11 @@ BATCH_SIZE="${BATCH_SIZE:-4}"
 ACCUM="${ACCUM:-1}"
 NUM_WORKERS="${NUM_WORKERS:-4}"
 MAX_EPOCHS="${MAX_EPOCHS:-}"
+MAX_STEPS="${MAX_STEPS:-}"
 VQ_CKPT="${VQ_CKPT:-/data/Shenzhen/zhahongli/models/ldmvfi/vqflow-extracted.ckpt}"
 RVRT_ROOT="${RVRT_ROOT:-/data/Shenzhen/zhahongli/RVRT}"
 RVRT_CKPT="${RVRT_CKPT:-$RVRT_ROOT/model_zoo/rvrt/002_RVRT_videosr_bi_Vimeo_14frames.pth}"
+SAVE_TRAIN_IMAGES="${SAVE_TRAIN_IMAGES:-0}"
 
 if [[ -z "$VQ_CKPT" || ! -f "$VQ_CKPT" ]]; then
   echo "VQ_CKPT is required"
@@ -50,24 +52,40 @@ echo "batch_size=$BATCH_SIZE"
 echo "accum=$ACCUM"
 echo "num_workers=$NUM_WORKERS"
 echo "max_epochs=${MAX_EPOCHS:-default}"
+echo "max_steps=${MAX_STEPS:-default}"
 echo "vq_ckpt=$VQ_CKPT"
 echo "rvrt_root=$RVRT_ROOT"
 echo "rvrt_ckpt=$RVRT_CKPT"
+echo "save_train_images=$SAVE_TRAIN_IMAGES"
 
 TRAINER_DOTLIST=()
 if [[ -n "$MAX_EPOCHS" ]]; then
   TRAINER_DOTLIST+=("lightning.trainer.max_epochs=$MAX_EPOCHS")
 fi
+if [[ -n "$MAX_STEPS" ]]; then
+  TRAINER_DOTLIST+=("lightning.trainer.max_steps=$MAX_STEPS")
+fi
+
+IMAGE_LOGGER_DOTLIST=(
+  "lightning.callbacks.image_logger.params.log_images_kwargs.plot_progressive_rows=False"
+  "lightning.callbacks.image_logger.params.log_images_kwargs.plot_diffusion_rows=False"
+  "lightning.callbacks.image_logger.params.log_images_kwargs.quantize_denoised=False"
+)
+if [[ "$SAVE_TRAIN_IMAGES" == "0" || "$SAVE_TRAIN_IMAGES" == "false" ]]; then
+  IMAGE_LOGGER_DOTLIST+=("lightning.callbacks.image_logger.params.max_images=0")
+fi
 
 "$PYTHON_BIN" -u main.py \
   --base "$CONFIG_PATH" \
   -t \
+  --no-test \
   --gpus "$GPU_IDS" \
   --logdir "$LOGDIR" \
   data.params.batch_size="$BATCH_SIZE" \
   data.params.num_workers="$NUM_WORKERS" \
   lightning.trainer.accumulate_grad_batches="$ACCUM" \
   "${TRAINER_DOTLIST[@]}" \
+  "${IMAGE_LOGGER_DOTLIST[@]}" \
   model.params.first_stage_config.params.ckpt_path="$VQ_CKPT" \
   model.params.rvrt_root="$RVRT_ROOT" \
   model.params.rvrt_ckpt="$RVRT_CKPT"

@@ -99,6 +99,9 @@ def main():
     parser.add_argument("--metrics", nargs="+", default=["PSNR", "SSIM"])
     parser.add_argument("--max_samples", type=int, default=0)
     parser.add_argument("--summary_json", default=None)
+    parser.add_argument("--save_images", action="store_true")
+    parser.add_argument("--save_sr_images", action="store_true")
+    parser.add_argument("--save_max_samples", type=int, default=0)
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -138,11 +141,14 @@ def main():
                 ddim_eta=args.ddim_eta,
             )
 
-        item_dir = join(args.out_dir, name)
-        os.makedirs(item_dir, exist_ok=True)
-        save_image(out, join(item_dir, "output.png"), value_range=(-1, 1), normalize=True)
-        save_image(prev_sr, join(item_dir, "prev_sr.png"), value_range=(-1, 1), normalize=True)
-        save_image(next_sr, join(item_dir, "next_sr.png"), value_range=(-1, 1), normalize=True)
+        should_save = args.save_images and (args.save_max_samples <= 0 or idx <= args.save_max_samples)
+        if should_save:
+            item_dir = join(args.out_dir, name)
+            os.makedirs(item_dir, exist_ok=True)
+            save_image(out, join(item_dir, "output.png"), value_range=(-1, 1), normalize=True)
+            if args.save_sr_images:
+                save_image(prev_sr, join(item_dir, "prev_sr.png"), value_range=(-1, 1), normalize=True)
+                save_image(next_sr, join(item_dir, "next_sr.png"), value_range=(-1, 1), normalize=True)
 
         gt_eval, out_eval, prev_eval, next_eval = align_for_metrics(
             gt.to(pipeline.device),
@@ -164,6 +170,9 @@ def main():
             "split": args.split,
             "num_samples": len(triplet_folders),
             "average": average,
+            "save_images": args.save_images,
+            "save_sr_images": args.save_sr_images,
+            "save_max_samples": args.save_max_samples,
         }
         with open(args.summary_json, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, ensure_ascii=True)

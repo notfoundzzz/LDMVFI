@@ -21,8 +21,10 @@ BATCH_SIZE="${BATCH_SIZE:-64}"
 ACCUM="${ACCUM:-1}"
 NUM_WORKERS="${NUM_WORKERS:-8}"
 MAX_EPOCHS="${MAX_EPOCHS:-}"
+MAX_STEPS="${MAX_STEPS:-}"
 VQ_CKPT="${VQ_CKPT:-/data/Shenzhen/zhahongli/models/ldmvfi/vqflow-extracted.ckpt}"
 USE_BVIDVC="${USE_BVIDVC:-auto}"
+SAVE_TRAIN_IMAGES="${SAVE_TRAIN_IMAGES:-0}"
 
 if [[ -z "$VQ_CKPT" || ! -f "$VQ_CKPT" ]]; then
   echo "VQ_CKPT is required"
@@ -42,8 +44,10 @@ echo "batch_size=$BATCH_SIZE" | tee -a "$LOG_FILE"
 echo "accum=$ACCUM" | tee -a "$LOG_FILE"
 echo "num_workers=$NUM_WORKERS" | tee -a "$LOG_FILE"
 echo "max_epochs=${MAX_EPOCHS:-default}" | tee -a "$LOG_FILE"
+echo "max_steps=${MAX_STEPS:-default}" | tee -a "$LOG_FILE"
 echo "vq_ckpt=$VQ_CKPT" | tee -a "$LOG_FILE"
 echo "use_bvidvc=$USE_BVIDVC" | tee -a "$LOG_FILE"
+echo "save_train_images=$SAVE_TRAIN_IMAGES" | tee -a "$LOG_FILE"
 
 TRAIN_DOTLIST=(
   "data.params.train.params.db_dir=$DATA_ROOT"
@@ -74,16 +78,30 @@ TRAINER_DOTLIST=()
 if [[ -n "$MAX_EPOCHS" ]]; then
   TRAINER_DOTLIST+=("lightning.trainer.max_epochs=$MAX_EPOCHS")
 fi
+if [[ -n "$MAX_STEPS" ]]; then
+  TRAINER_DOTLIST+=("lightning.trainer.max_steps=$MAX_STEPS")
+fi
+
+IMAGE_LOGGER_DOTLIST=(
+  "lightning.callbacks.image_logger.params.log_images_kwargs.plot_progressive_rows=False"
+  "lightning.callbacks.image_logger.params.log_images_kwargs.plot_diffusion_rows=False"
+  "lightning.callbacks.image_logger.params.log_images_kwargs.quantize_denoised=False"
+)
+if [[ "$SAVE_TRAIN_IMAGES" == "0" || "$SAVE_TRAIN_IMAGES" == "false" ]]; then
+  IMAGE_LOGGER_DOTLIST+=("lightning.callbacks.image_logger.params.max_images=0")
+fi
 
 "$PYTHON_BIN" -u main.py \
   --base configs/ldm/ldmvfi-vqflow-f32-c256-concat_max.yaml \
   -t \
+  --no-test \
   --gpus "$GPU_IDS" \
   --logdir "$LOGDIR" \
   data.params.batch_size="$BATCH_SIZE" \
   data.params.num_workers="$NUM_WORKERS" \
   lightning.trainer.accumulate_grad_batches="$ACCUM" \
   "${TRAINER_DOTLIST[@]}" \
+  "${IMAGE_LOGGER_DOTLIST[@]}" \
   "${TRAIN_DOTLIST[@]}" \
   data.params.validation.params.db_dir="$DATA_ROOT/vimeo_septuplet" \
   model.params.first_stage_config.params.ckpt_path="$VQ_CKPT" 2>&1 | tee -a "$LOG_FILE"
