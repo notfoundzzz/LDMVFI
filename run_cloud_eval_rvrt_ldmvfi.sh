@@ -74,6 +74,12 @@ echo "save_images=$SAVE_IMAGES"
 echo "save_sr_images=$SAVE_SR_IMAGES"
 echo "save_max_samples=$SAVE_MAX_SAMPLES"
 
+if [[ "$LDM_CONFIG" == "$DEFAULT_BASE_CONFIG" ]] && [[ "$LDM_CKPT" == *"rvrt-lora"* ]]; then
+  echo "Refusing to evaluate a LoRA checkpoint with the base LDMVFI config."
+  echo "Set LDM_CONFIG=$DEFAULT_LORA_CONFIG or leave the default config selection enabled."
+  exit 1
+fi
+
 if [ -n "$GPU_ID" ]; then
   export CUDA_VISIBLE_DEVICES="$GPU_ID"
 fi
