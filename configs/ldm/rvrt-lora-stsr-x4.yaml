@@ -19,6 +19,8 @@ model:
     rvrt_ckpt: /data/Shenzhen/zhahongli/RVRT/model_zoo/rvrt/002_RVRT_videosr_bi_Vimeo_14frames.pth
     lora_rank: 8
     lora_alpha: 16.0
+    rvrt_train_mode: frozen
+    rvrt_lr: 1.0e-05
     unet_config:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel
       params:

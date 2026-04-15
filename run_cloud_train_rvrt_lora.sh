@@ -32,6 +32,12 @@ BASE_LDM_CKPT="${BASE_LDM_CKPT:-/data/Shenzhen/zhahongli/models/ldmvfi/ldmvfi-vq
 RVRT_ROOT="${RVRT_ROOT:-/data/Shenzhen/zhahongli/RVRT}"
 RVRT_CKPT="${RVRT_CKPT:-$RVRT_ROOT/model_zoo/rvrt/002_RVRT_videosr_bi_Vimeo_14frames.pth}"
 SAVE_TRAIN_IMAGES="${SAVE_TRAIN_IMAGES:-0}"
+MODEL_BASE_LR="${MODEL_BASE_LR:-}"
+LORA_RANK="${LORA_RANK:-}"
+LORA_ALPHA="${LORA_ALPHA:-}"
+RVRT_TRAIN_MODE="${RVRT_TRAIN_MODE:-frozen}"
+RVRT_TRAIN_PATTERNS="${RVRT_TRAIN_PATTERNS:-}"
+RVRT_LR="${RVRT_LR:-}"
 
 if [[ -z "$VQ_CKPT" || ! -f "$VQ_CKPT" ]]; then
   echo "VQ_CKPT is required"
@@ -63,6 +69,12 @@ echo "base_ldm_ckpt=$BASE_LDM_CKPT"
 echo "rvrt_root=$RVRT_ROOT"
 echo "rvrt_ckpt=$RVRT_CKPT"
 echo "save_train_images=$SAVE_TRAIN_IMAGES"
+echo "model_base_lr=${MODEL_BASE_LR:-default}"
+echo "lora_rank=${LORA_RANK:-default}"
+echo "lora_alpha=${LORA_ALPHA:-default}"
+echo "rvrt_train_mode=$RVRT_TRAIN_MODE"
+echo "rvrt_train_patterns=${RVRT_TRAIN_PATTERNS:-default}"
+echo "rvrt_lr=${RVRT_LR:-default}"
 
 TRAINER_DOTLIST=()
 if [[ -n "$MAX_EPOCHS" ]]; then
@@ -70,6 +82,22 @@ if [[ -n "$MAX_EPOCHS" ]]; then
 fi
 if [[ -n "$MAX_STEPS" ]]; then
   TRAINER_DOTLIST+=("lightning.trainer.max_steps=$MAX_STEPS")
+fi
+if [[ -n "$MODEL_BASE_LR" ]]; then
+  TRAINER_DOTLIST+=("model.base_learning_rate=$MODEL_BASE_LR")
+fi
+if [[ -n "$LORA_RANK" ]]; then
+  TRAINER_DOTLIST+=("model.params.lora_rank=$LORA_RANK")
+fi
+if [[ -n "$LORA_ALPHA" ]]; then
+  TRAINER_DOTLIST+=("model.params.lora_alpha=$LORA_ALPHA")
+fi
+TRAINER_DOTLIST+=("model.params.rvrt_train_mode=$RVRT_TRAIN_MODE")
+if [[ -n "$RVRT_TRAIN_PATTERNS" ]]; then
+  TRAINER_DOTLIST+=("model.params.rvrt_train_patterns=$RVRT_TRAIN_PATTERNS")
+fi
+if [[ -n "$RVRT_LR" ]]; then
+  TRAINER_DOTLIST+=("model.params.rvrt_lr=$RVRT_LR")
 fi
 
 IMAGE_LOGGER_DOTLIST=(

@@ -1,3 +1,5 @@
+from contextlib import nullcontext
+
 import torch
 from torch.optim.lr_scheduler import LambdaLR
 
@@ -18,6 +20,9 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
         rvrt_tile_overlap=(2, 20, 20),
         lora_rank=8,
         lora_alpha=16.0,
+        rvrt_train_mode="frozen",
+        rvrt_train_patterns=None,
+        rvrt_lr=1.0e-5,
         lr_prev_key="prev_frame_lr",
         lr_next_key="next_frame_lr",
         cond_prev_key="prev_frame",
@@ -30,6 +35,8 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
         self.lr_next_key = lr_next_key
         self.cond_prev_key = cond_prev_key
         self.cond_next_key = cond_next_key
+        self.rvrt_train_mode = rvrt_train_mode
+        self.rvrt_lr = rvrt_lr
 
         self.rvrt_frontend = build_sr_frontend(
             sr_mode="rvrt",
@@ -40,9 +47,8 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
             tile=tuple(rvrt_tile),
             tile_overlap=tuple(rvrt_tile_overlap),
         )
-        self.rvrt_frontend.eval()
-        for param in self.rvrt_frontend.parameters():
-            param.requires_grad = False
+        self.rvrt_trainable_patterns = self._normalize_rvrt_train_patterns(rvrt_train_patterns)
+        self._configure_rvrt_training()
 
         for param in self.first_stage_model.parameters():
             param.requires_grad = False
@@ -63,8 +69,58 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
     def on_fit_start(self):
         super().on_fit_start()
         self.rvrt_frontend = self.rvrt_frontend.to(self.device)
+        if self._rvrt_requires_grad():
+            self.rvrt_frontend.train()
+        else:
+            self.rvrt_frontend.eval()
 
-    @torch.no_grad()
+    def _normalize_rvrt_train_patterns(self, patterns):
+        if patterns is None:
+            return (
+                "conv_before_upsample",
+                "upsample",
+                "conv_up1",
+                "conv_up2",
+                "conv_hr",
+                "conv_last",
+                "tail",
+                "reconstruction",
+            )
+        if isinstance(patterns, str):
+            patterns = [p.strip() for p in patterns.split(",")]
+        return tuple(p for p in patterns if p)
+
+    def _rvrt_requires_grad(self):
+        return self.rvrt_train_mode != "frozen"
+
+    def _configure_rvrt_training(self):
+        for param in self.rvrt_frontend.parameters():
+            param.requires_grad = False
+
+        if not self._rvrt_requires_grad():
+            self.rvrt_frontend.eval()
+            print("RVRT frontend frozen")
+            return
+
+        trainable_names = []
+        for name, param in self.rvrt_frontend.named_parameters():
+            if any(pattern in name for pattern in self.rvrt_trainable_patterns):
+                param.requires_grad = True
+                trainable_names.append(name)
+
+        if not trainable_names:
+            raise RuntimeError(
+                "RVRT partial finetuning was requested, but no parameters matched "
+                f"patterns={self.rvrt_trainable_patterns}"
+            )
+
+        self.rvrt_frontend.train()
+        preview = trainable_names[:10]
+        print(
+            f"RVRT frontend partial finetune enabled: {len(trainable_names)} params matched "
+            f"patterns={self.rvrt_trainable_patterns}. First names: {preview}"
+        )
+
     def _super_resolve_neighbors(self, batch, bs=None):
         prev_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_prev_key).to(self.device)
         next_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_next_key).to(self.device)
@@ -75,12 +131,13 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
         prev_01 = (prev_lr + 1.0) / 2.0
         next_01 = (next_lr + 1.0) / 2.0
         seq = torch.stack([prev_01, next_01], dim=1)
-        out = self.rvrt_frontend(seq)
+        grad_context = nullcontext() if self._rvrt_requires_grad() else torch.no_grad()
+        with grad_context:
+            out = self.rvrt_frontend(seq)
         prev_sr = torch.clamp(out[:, 0] * 2.0 - 1.0, min=-1.0, max=1.0)
         next_sr = torch.clamp(out[:, 1] * 2.0 - 1.0, min=-1.0, max=1.0)
         return prev_sr, next_sr
 
-    @torch.no_grad()
     def get_input(
         self,
         batch,
@@ -97,8 +154,9 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
             x = x[:bs]
         x = x.to(self.device)
 
-        encoder_posterior = self.encode_first_stage(x)
-        z = self.get_first_stage_encoding(encoder_posterior).detach()
+        with torch.no_grad():
+            encoder_posterior = self.encode_first_stage(x)
+            z = self.get_first_stage_encoding(encoder_posterior).detach()
 
         prev_sr, next_sr = self._super_resolve_neighbors(batch, bs=bs)
         xc = {self.cond_prev_key: prev_sr, self.cond_next_key: next_sr}
@@ -116,13 +174,22 @@ class LatentDiffusionVFIRVRTLoRA(LatentDiffusionVFI):
         return out
 
     def configure_optimizers(self):
-        lr = self.learning_rate
-        params = list(lora_parameters(self.model))
-        if self.learn_logvar:
-            params.append(self.logvar)
-        if not params:
+        params = []
+        lora_params = list(lora_parameters(self.model))
+        if not lora_params:
             raise RuntimeError("No trainable LoRA parameters found")
-        opt = torch.optim.AdamW(params, lr=lr)
+        params.append({"params": lora_params, "lr": self.learning_rate, "name": "lora"})
+
+        rvrt_params = [p for p in self.rvrt_frontend.parameters() if p.requires_grad]
+        if rvrt_params:
+            params.append({"params": rvrt_params, "lr": self.rvrt_lr, "name": "rvrt"})
+            print(f"Optimizer groups: LoRA lr={self.learning_rate:.2e}, RVRT lr={self.rvrt_lr:.2e}")
+        else:
+            print(f"Optimizer groups: LoRA lr={self.learning_rate:.2e}")
+
+        if self.learn_logvar:
+            params.append({"params": [self.logvar], "lr": self.learning_rate, "name": "logvar"})
+        opt = torch.optim.AdamW(params, lr=self.learning_rate)
         if self.use_scheduler:
             scheduler = instantiate_from_config(self.scheduler_config)
             scheduler = [{"scheduler": LambdaLR(opt, lr_lambda=scheduler.schedule), "interval": "step", "frequency": 1}]
