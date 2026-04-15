@@ -1,5 +1,6 @@
 import os
 from types import SimpleNamespace
+from contextlib import nullcontext
 
 import torch
 import torch.nn.functional as F
@@ -94,11 +95,13 @@ class RVRTVideoSR(torch.nn.Module):
         for param in self.model.parameters():
             param.requires_grad = False
 
-    @torch.no_grad()
-    def forward(self, lq_frames):
-        return self.test_video(lq_frames)
+    def _grad_context(self):
+        return nullcontext() if any(p.requires_grad for p in self.model.parameters()) else torch.no_grad()
 
-    @torch.no_grad()
+    def forward(self, lq_frames):
+        with self._grad_context():
+            return self.test_video(lq_frames)
+
     def test_video(self, lq):
         num_frame_testing = self.args.tile[0]
         if num_frame_testing:
@@ -138,7 +141,6 @@ class RVRTVideoSR(torch.nn.Module):
         output = self.test_clip(lq)
         return output[:, :d_old, :, :, :]
 
-    @torch.no_grad()
     def test_clip(self, lq):
         sf = self.args.scale
         window_size = self.args.window_size
