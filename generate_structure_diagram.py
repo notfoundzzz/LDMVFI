@@ -25,9 +25,29 @@ def load_font(size: int):
     return ImageFont.load_default()
 
 
-def draw_centered_text(draw, box: Tuple[int, int, int, int], text: str, font, fill=TEXT, line_gap=6):
+def wrap_text_to_width(draw, text: str, font, max_width: int):
+    wrapped_lines = []
+    for raw_line in text.split("\n"):
+        words = raw_line.split()
+        if not words:
+            wrapped_lines.append("")
+            continue
+        cur = words[0]
+        for word in words[1:]:
+            trial = f"{cur} {word}"
+            bbox = draw.textbbox((0, 0), trial, font=font)
+            if bbox[2] - bbox[0] <= max_width:
+                cur = trial
+            else:
+                wrapped_lines.append(cur)
+                cur = word
+        wrapped_lines.append(cur)
+    return wrapped_lines
+
+
+def draw_centered_text(draw, box: Tuple[int, int, int, int], text: str, font, fill=TEXT, line_gap=6, padding=16):
     x0, y0, x1, y1 = box
-    lines = text.split("\n")
+    lines = wrap_text_to_width(draw, text, font, max_width=(x1 - x0 - 2 * padding))
     bboxes = [draw.textbbox((0, 0), line, font=font) for line in lines]
     heights = [b[3] - b[1] for b in bboxes]
     widths = [b[2] - b[0] for b in bboxes]
@@ -70,28 +90,28 @@ def main():
     parser.add_argument("--show-lora", action="store_true", help="Annotate LoRA on diffusion UNet")
     args = parser.parse_args()
 
-    W, H = 1800, 860
+    W, H = 1880, 920
     canvas = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(canvas)
 
-    title_font = load_font(42)
-    box_font = load_font(28)
+    title_font = load_font(40)
+    box_font = load_font(25)
     note_font = load_font(24)
-    small_font = load_font(22)
+    small_font = load_font(20)
 
     draw.text((70, 40), args.title, font=title_font, fill=TEXT)
     draw.text((70, 96), "Two-stage stitching: spatial super-resolution first, temporal interpolation second", font=note_font, fill=MUTED)
 
     # Top flow
-    prev_lr = (90, 190, 300, 300)
-    next_lr = (90, 360, 300, 470)
-    rvrt = (390, 250, 650, 410)
-    prev_sr = (760, 190, 980, 300)
-    next_sr = (760, 360, 980, 470)
-    cond = (1080, 250, 1340, 410)
-    unet = (1440, 170, 1710, 330)
-    vq = (1440, 420, 1710, 580)
-    out = (1440, 650, 1710, 760)
+    prev_lr = (90, 205, 320, 325)
+    next_lr = (90, 385, 320, 505)
+    rvrt = (410, 270, 710, 440)
+    prev_sr = (810, 205, 1040, 325)
+    next_sr = (810, 385, 1040, 505)
+    cond = (1140, 255, 1470, 455)
+    unet = (1560, 170, 1820, 350)
+    vq = (1560, 435, 1820, 615)
+    out = (1560, 700, 1820, 820)
 
     draw_box(draw, prev_lr, "Prev LR\nim3.png", box_font, BOX)
     draw_box(draw, next_lr, "Next LR\nim5.png", box_font, BOX)
@@ -108,29 +128,29 @@ def main():
     draw_box(draw, out, "Predicted HR Middle\nim4.png", box_font, BOX)
 
     # Arrows
-    draw_arrow(draw, (300, 245), (390, 295))
-    draw_arrow(draw, (300, 415), (390, 365))
-    draw_arrow(draw, (650, 295), (760, 245))
-    draw_arrow(draw, (650, 365), (760, 415))
-    draw_arrow(draw, (980, 245), (1080, 295))
-    draw_arrow(draw, (980, 415), (1080, 365))
-    draw_arrow(draw, (1340, 330), (1440, 250))
-    draw_arrow(draw, (1575, 330), (1575, 420))
-    draw_arrow(draw, (1575, 580), (1575, 650))
+    draw_arrow(draw, (320, 260), (410, 315))
+    draw_arrow(draw, (320, 450), (410, 395))
+    draw_arrow(draw, (710, 315), (810, 260))
+    draw_arrow(draw, (710, 395), (810, 450))
+    draw_arrow(draw, (1040, 260), (1140, 315))
+    draw_arrow(draw, (1040, 450), (1140, 395))
+    draw_arrow(draw, (1470, 355), (1560, 260))
+    draw_arrow(draw, (1690, 350), (1690, 435))
+    draw_arrow(draw, (1690, 615), (1690, 700))
 
     # Side notes
-    draw.text((410, 425), "Frozen in current setup", font=small_font, fill=ACCENT)
-    draw.text((1455, 590), "Decode latent to final HR frame", font=small_font, fill=MUTED)
-    draw.text((1090, 430), "SR neighbors are used as LDMVFI conditions", font=small_font, fill=MUTED)
+    draw.text((440, 455), "Frozen in current setup", font=small_font, fill=ACCENT)
+    draw.text((1550, 635), "Decode latent to final HR frame", font=small_font, fill=MUTED)
+    draw.text((1130, 485), "SR neighbors are used as LDMVFI conditions", font=small_font, fill=MUTED)
 
     # Bottom summary strip
-    strip = (70, 790, 1730, 835)
+    strip = (70, 850, 1810, 895)
     draw.rounded_rectangle(strip, radius=12, fill=(240, 242, 246), outline=BOX_BORDER, width=2)
     summary = (
         "Current stitching: LR prev/next -> RVRT -> SR prev/next -> LDMVFI -> HR middle. "
         "Training strategy: RVRT and VQFlow frozen; diffusion UNet frozen or LoRA-tuned depending on experiment."
     )
-    draw.text((90, 802), summary, font=small_font, fill=TEXT)
+    draw_centered_text(draw, strip, summary, small_font, fill=TEXT, line_gap=4, padding=20)
 
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
     canvas.save(args.output)
