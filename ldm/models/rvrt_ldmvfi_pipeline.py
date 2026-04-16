@@ -76,15 +76,16 @@ class RVRTLDMVFIPipeline:
         prev_sr = prev_sr * 2.0 - 1.0
         next_sr = next_sr * 2.0 - 1.0
 
-        xc = {"prev_frame": prev_sr, "next_frame": next_sr}
-        c, phi_prev_list, phi_next_list = self.model.get_learned_conditioning(xc)
-        shape = (self.model.channels, c.shape[2], c.shape[3])
-        if use_ddim:
-            ddim = DDIMSampler(self.model)
-            latent, _ = ddim.sample(ddim_steps, c.shape[0], shape, c, eta=ddim_eta, verbose=False)
-        else:
-            latent = self.model.sample_ddpm(conditioning=c, batch_size=c.shape[0], shape=shape, x_T=None, verbose=False)
-        if isinstance(latent, tuple):
-            latent = latent[0]
-        out = self.model.decode_first_stage(latent, xc, phi_prev_list, phi_next_list)
+        with self.model.ema_scope() if hasattr(self.model, "ema_scope") else torch.no_grad():
+            xc = {"prev_frame": prev_sr, "next_frame": next_sr}
+            c, phi_prev_list, phi_next_list = self.model.get_learned_conditioning(xc)
+            shape = (self.model.channels, c.shape[2], c.shape[3])
+            if use_ddim:
+                ddim = DDIMSampler(self.model)
+                latent, _ = ddim.sample(ddim_steps, c.shape[0], shape, c, eta=ddim_eta, verbose=False)
+            else:
+                latent = self.model.sample_ddpm(conditioning=c, batch_size=c.shape[0], shape=shape, x_T=None, verbose=False)
+            if isinstance(latent, tuple):
+                latent = latent[0]
+            out = self.model.decode_first_stage(latent, xc, phi_prev_list, phi_next_list)
         return torch.clamp(out, min=-1.0, max=1.0), prev_sr, next_sr
