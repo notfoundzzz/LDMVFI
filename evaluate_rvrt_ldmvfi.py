@@ -14,6 +14,16 @@ import utility
 from ldm.models.rvrt_ldmvfi_pipeline import RVRTLDMVFIPipeline
 
 
+def infer_lora_rank_from_checkpoint(ckpt_path):
+    state = torch.load(ckpt_path, map_location="cpu")
+    state_dict = state["state_dict"] if "state_dict" in state else state
+    lora_down_keys = sorted(k for k in state_dict.keys() if k.endswith("lora_down.weight"))
+    if not lora_down_keys:
+        return None
+    first_key = lora_down_keys[0]
+    return int(state_dict[first_key].shape[0])
+
+
 def load_triplet(folder, transform):
     candidates = [
         ("frame_00.png", "frame_01_gt.png", "frame_02.png"),
@@ -107,6 +117,15 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     ldm_config = OmegaConf.load(args.ldm_config)
+    inferred_lora_rank = infer_lora_rank_from_checkpoint(args.ldm_ckpt)
+    if inferred_lora_rank is not None:
+        cfg_rank = ldm_config.model.params.get("lora_rank", None)
+        if cfg_rank != inferred_lora_rank:
+            print(
+                f"Overriding config lora_rank from {cfg_rank} to {inferred_lora_rank} "
+                f"based on checkpoint {args.ldm_ckpt}"
+            )
+            ldm_config.model.params.lora_rank = inferred_lora_rank
     pipeline = RVRTLDMVFIPipeline(
         ldm_config=ldm_config,
         ldm_ckpt=args.ldm_ckpt,
