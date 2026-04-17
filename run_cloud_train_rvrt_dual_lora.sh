@@ -144,15 +144,18 @@ fi
 
 CMD=(
   "$PYTHON_BIN" -u main.py
-  -t
-  --no-test
-  --gpus "$GPU_IDS"
-  --logdir "$LOGDIR"
 )
 
 if [[ -z "$RESUME_CKPT" ]]; then
   CMD+=(--base "$CONFIG_PATH")
 fi
+
+CMD+=(
+  -t
+  --no-test
+  --gpus "$GPU_IDS"
+  --logdir "$LOGDIR"
+)
 
 if [[ -n "$RESUME_CKPT" ]]; then
   CMD+=(-r "$RESUME_CKPT")
