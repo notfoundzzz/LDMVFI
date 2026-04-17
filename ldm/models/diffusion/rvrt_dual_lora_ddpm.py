@@ -108,7 +108,13 @@ class LatentDiffusionVFIRVRTDualLoRA(LatentDiffusionVFI):
     def on_train_batch_start(self, batch, batch_idx, dataloader_idx=0):
         if self.semantic_start_step > 0 and self.global_step >= self.semantic_start_step and self._dual_stage != "both":
             self._set_dual_lora_stage("both")
-        return super().on_train_batch_start(batch, batch_idx, dataloader_idx)
+        parent_hook = getattr(super(), "on_train_batch_start", None)
+        if parent_hook is None:
+            return None
+        try:
+            return parent_hook(batch, batch_idx, dataloader_idx)
+        except TypeError:
+            return parent_hook(batch, batch_idx)
 
     def _set_dual_lora_stage(self, stage: str):
         if stage == self._dual_stage:
