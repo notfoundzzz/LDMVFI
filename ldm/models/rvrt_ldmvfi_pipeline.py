@@ -62,7 +62,7 @@ class RVRTLDMVFIPipeline:
     def super_resolve_neighbors(self, prev_lr, next_lr):
         seq = torch.stack([prev_lr, next_lr], dim=1).to(self.device)
         out = self.sr_frontend(seq)
-        return torch.clamp(out[:, 0], -1.0, 1.0), torch.clamp(out[:, 1], -1.0, 1.0)
+        return out[:, 0], out[:, 1]
 
     @torch.no_grad()
     def interpolate(self, prev_lr, next_lr, use_ddim=True, ddim_steps=200, ddim_eta=1.0):
@@ -73,8 +73,8 @@ class RVRTLDMVFIPipeline:
         prev_01 = (prev_lr + 1.0) / 2.0
         next_01 = (next_lr + 1.0) / 2.0
         prev_sr, next_sr = self.super_resolve_neighbors(prev_01, next_01)
-        prev_sr = prev_sr * 2.0 - 1.0
-        next_sr = next_sr * 2.0 - 1.0
+        prev_sr = torch.clamp(prev_sr * 2.0 - 1.0, min=-1.0, max=1.0)
+        next_sr = torch.clamp(next_sr * 2.0 - 1.0, min=-1.0, max=1.0)
 
         with self.model.ema_scope() if hasattr(self.model, "ema_scope") else torch.no_grad():
             xc = {"prev_frame": prev_sr, "next_frame": next_sr}
