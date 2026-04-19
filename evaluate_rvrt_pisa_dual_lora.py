@@ -113,16 +113,20 @@ def main():
     parser.add_argument("--lora_target_suffixes", nargs="*", default=None)
     parser.add_argument("--pixel_scale", type=float, default=1.0)
     parser.add_argument("--semantic_scale", type=float, default=1.0)
-    parser.add_argument("--use_ddim", action="store_true")
+    parser.add_argument("--use_ddim", dest="use_ddim", action="store_true")
+    parser.add_argument("--use_ddpm", dest="use_ddim", action="store_false")
     parser.add_argument("--ddim_steps", type=int, default=200)
-    parser.add_argument("--ddim_eta", type=float, default=1.0)
+    parser.add_argument("--ddim_eta", type=float, default=0.0)
     parser.add_argument("--use_raw_weights", action="store_true")
+    parser.add_argument("--seed", type=int, default=1234)
+    parser.add_argument("--allow_incomplete_ckpt", dest="strict_checkpoint", action="store_false")
     parser.add_argument("--metrics", nargs="+", default=["PSNR", "SSIM"])
     parser.add_argument("--max_samples", type=int, default=0)
     parser.add_argument("--summary_json", default=None)
     parser.add_argument("--save_images", action="store_true")
     parser.add_argument("--save_sr_images", action="store_true")
     parser.add_argument("--save_max_samples", type=int, default=0)
+    parser.set_defaults(use_ddim=True, strict_checkpoint=True)
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -158,6 +162,7 @@ def main():
         pixel_scale=args.pixel_scale,
         semantic_scale=args.semantic_scale,
         use_ema=not args.use_raw_weights,
+        strict_checkpoint=args.strict_checkpoint,
     )
     results = {metric: [] for metric in args.metrics}
     dataset_root_hr = args.dataset_root_hr
@@ -182,6 +187,7 @@ def main():
                 use_ddim=args.use_ddim,
                 ddim_steps=args.ddim_steps,
                 ddim_eta=args.ddim_eta,
+                seed=args.seed,
             )
 
         should_save = args.save_images and (args.save_max_samples <= 0 or idx <= args.save_max_samples)
@@ -210,7 +216,11 @@ def main():
             "average": average,
             "pixel_scale": args.pixel_scale,
             "semantic_scale": args.semantic_scale,
+            "use_ddim": args.use_ddim,
+            "ddim_eta": args.ddim_eta,
+            "seed": args.seed,
             "use_ema": not args.use_raw_weights,
+            "strict_checkpoint": args.strict_checkpoint,
         }
         with open(args.summary_json, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, ensure_ascii=True)

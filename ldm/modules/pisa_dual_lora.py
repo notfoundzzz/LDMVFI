@@ -69,11 +69,11 @@ class PiSADualLoRALinear(nn.Module):
         return out
 
 
-class PiSADualLoRAConv1x1(nn.Module):
-    """@brief PiSA-style dual-branch LoRA 1x1 convolution layer.
+class PiSADualLoRAConvNd(nn.Module):
+    """@brief PiSA-style dual-branch convolution LoRA layer.
 
-    @example This wrapper is used for 1x1 layers such as
-    `proj_in`, `proj_out`, or `skip_connection`.
+    @example A 3x3 ResBlock convolution can be adapted by a same-kernel
+    low-rank projection followed by a 1x1 projection back to the output space.
     """
 
     def __init__(
@@ -86,8 +86,6 @@ class PiSADualLoRAConv1x1(nn.Module):
     ):
         super().__init__()
         assert isinstance(base, (nn.Conv1d, nn.Conv2d))
-        kernel_size = base.kernel_size if isinstance(base.kernel_size, tuple) else (base.kernel_size,)
-        assert all(k == 1 for k in kernel_size), "PiSADualLoRAConv1x1 only supports 1x1 convolutions"
 
         self.base = base
         self.base.weight.requires_grad = False
@@ -95,13 +93,25 @@ class PiSADualLoRAConv1x1(nn.Module):
             self.base.bias.requires_grad = False
 
         conv_type = nn.Conv1d if isinstance(base, nn.Conv1d) else nn.Conv2d
+        kernel_size = base.kernel_size if isinstance(base.kernel_size, tuple) else (base.kernel_size,)
+        stride = base.stride if isinstance(base.stride, tuple) else (base.stride,) * len(kernel_size)
+        padding = base.padding if isinstance(base.padding, tuple) else (base.padding,) * len(kernel_size)
+        dilation = base.dilation if isinstance(base.dilation, tuple) else (base.dilation,) * len(kernel_size)
         self.pixel_scaling = pixel_alpha / pixel_rank if pixel_rank > 0 else 0.0
         self.semantic_scaling = semantic_alpha / semantic_rank if semantic_rank > 0 else 0.0
         self.pixel_scale = 1.0
         self.semantic_scale = 1.0
 
         if pixel_rank > 0:
-            self.pixel_lora_down = conv_type(base.in_channels, pixel_rank, kernel_size=1, bias=False)
+            self.pixel_lora_down = conv_type(
+                base.in_channels,
+                pixel_rank,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                dilation=dilation,
+                bias=False,
+            )
             self.pixel_lora_up = conv_type(pixel_rank, base.out_channels, kernel_size=1, bias=False)
             self._reset_branch(self.pixel_lora_down, self.pixel_lora_up)
         else:
@@ -109,7 +119,15 @@ class PiSADualLoRAConv1x1(nn.Module):
             self.pixel_lora_up = None
 
         if semantic_rank > 0:
-            self.semantic_lora_down = conv_type(base.in_channels, semantic_rank, kernel_size=1, bias=False)
+            self.semantic_lora_down = conv_type(
+                base.in_channels,
+                semantic_rank,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                dilation=dilation,
+                bias=False,
+            )
             self.semantic_lora_up = conv_type(semantic_rank, base.out_channels, kernel_size=1, bias=False)
             self._reset_branch(self.semantic_lora_down, self.semantic_lora_up)
         else:
@@ -152,9 +170,7 @@ def _wrap_module(
     if isinstance(leaf, nn.Linear):
         return PiSADualLoRALinear(leaf, pixel_rank, pixel_alpha, semantic_rank, semantic_alpha)
     if isinstance(leaf, (nn.Conv1d, nn.Conv2d)):
-        kernel_size = leaf.kernel_size if isinstance(leaf.kernel_size, tuple) else (leaf.kernel_size,)
-        if all(k == 1 for k in kernel_size):
-            return PiSADualLoRAConv1x1(leaf, pixel_rank, pixel_alpha, semantic_rank, semantic_alpha)
+        return PiSADualLoRAConvNd(leaf, pixel_rank, pixel_alpha, semantic_rank, semantic_alpha)
     return None
 
 

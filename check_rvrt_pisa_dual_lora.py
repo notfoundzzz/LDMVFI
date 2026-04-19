@@ -104,6 +104,7 @@ def compare_outputs(args):
         use_ddim=args.use_ddim,
         ddim_steps=args.ddim_steps,
         ddim_eta=args.ddim_eta,
+        seed=args.seed,
     )
 
     pipeline_b = RVRTPiSADualLoRAPipeline(
@@ -124,6 +125,7 @@ def compare_outputs(args):
         use_ddim=args.use_ddim,
         ddim_steps=args.ddim_steps,
         ddim_eta=args.ddim_eta,
+        seed=args.seed,
     )
 
     diff = (out_a - out_b).abs()
@@ -131,6 +133,9 @@ def compare_outputs(args):
         "sample_name": name,
         "scale_a": {"pixel": args.pixel_scale_a, "semantic": args.semantic_scale_a},
         "scale_b": {"pixel": args.pixel_scale_b, "semantic": args.semantic_scale_b},
+        "use_ddim": args.use_ddim,
+        "ddim_eta": args.ddim_eta,
+        "seed": args.seed,
         "mean_abs_diff": float(diff.mean().item()),
         "max_abs_diff": float(diff.max().item()),
         "sum_abs_diff": float(diff.sum().item()),
@@ -169,12 +174,15 @@ def main():
     parser.add_argument("--semantic_scale_a", type=float, default=1.0)
     parser.add_argument("--pixel_scale_b", type=float, default=1.0)
     parser.add_argument("--semantic_scale_b", type=float, default=0.0)
-    parser.add_argument("--use_ddim", action="store_true")
+    parser.add_argument("--use_ddim", dest="use_ddim", action="store_true")
+    parser.add_argument("--use_ddpm", dest="use_ddim", action="store_false")
     parser.add_argument("--ddim_steps", type=int, default=200)
-    parser.add_argument("--ddim_eta", type=float, default=1.0)
+    parser.add_argument("--ddim_eta", type=float, default=0.0)
+    parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--use_raw_weights", action="store_true")
     parser.add_argument("--save_dir", default=None)
     parser.add_argument("--summary_json", default=None)
+    parser.set_defaults(use_ddim=True)
     args = parser.parse_args()
 
     summary = {

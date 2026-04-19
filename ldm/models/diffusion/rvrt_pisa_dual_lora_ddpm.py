@@ -147,8 +147,9 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
 
     def on_train_batch_start(self, batch, batch_idx, dataloader_idx=0):
         if self.dual_lora_train_mode == "staged":
-            next_stage = "joint" if self.global_step >= self.semantic_start_step else "pixel"
+            next_stage = "semantic" if self.global_step >= self.semantic_start_step else "pixel"
             self._set_training_stage(next_stage)
+        self._set_optimizer_stage_lrs()
         parent_hook = getattr(super(), "on_train_batch_start", None)
         if parent_hook is None:
             return None
@@ -216,12 +217,42 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
         if stage == "pixel":
             set_pisa_dual_lora_scales(self.model, pixel_scale=self.pixel_scale, semantic_scale=0.0)
             print("PiSA Dual-LoRA stage: pixel-only")
+        elif stage == "semantic":
+            set_pisa_dual_lora_scales(self.model, pixel_scale=self.pixel_scale, semantic_scale=self.semantic_scale)
+            print("PiSA Dual-LoRA stage: semantic-only optimization")
         elif stage == "joint":
             set_pisa_dual_lora_scales(self.model, pixel_scale=self.pixel_scale, semantic_scale=self.semantic_scale)
             print("PiSA Dual-LoRA stage: pixel + semantic")
         else:
             raise ValueError(f"Unsupported PiSA Dual-LoRA stage: {stage}")
         self._active_stage = stage
+
+    def _set_optimizer_stage_lrs(self):
+        trainer = getattr(self, "trainer", None)
+        if trainer is None or not getattr(trainer, "optimizers", None):
+            return
+
+        for optimizer in trainer.optimizers:
+            scheduled_lrs = {}
+            for group in optimizer.param_groups:
+                name = group.get("name")
+                if name in ("pixel_lora", "semantic_lora"):
+                    scheduled_lrs[name] = group["lr"] if group["lr"] > 0 else group.get("initial_lr", self.learning_rate)
+
+            if self._active_stage == "pixel":
+                target_lrs = {"pixel_lora": scheduled_lrs.get("pixel_lora", self.learning_rate), "semantic_lora": 0.0}
+            elif self._active_stage == "semantic":
+                target_lrs = {"pixel_lora": 0.0, "semantic_lora": scheduled_lrs.get("semantic_lora", self.learning_rate)}
+            else:
+                target_lrs = {
+                    "pixel_lora": scheduled_lrs.get("pixel_lora", self.learning_rate),
+                    "semantic_lora": scheduled_lrs.get("semantic_lora", self.learning_rate),
+                }
+
+            for group in optimizer.param_groups:
+                name = group.get("name")
+                if name in target_lrs:
+                    group["lr"] = target_lrs[name]
 
     def set_pisa_dual_lora_scales(self, pixel_scale=1.0, semantic_scale=1.0):
         self.pixel_scale = float(pixel_scale)

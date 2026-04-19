@@ -103,15 +103,21 @@ def main():
     parser.add_argument("--rvrt_root", default=None)
     parser.add_argument("--rvrt_task", default="002_RVRT_videosr_bi_Vimeo_14frames")
     parser.add_argument("--rvrt_ckpt", default=None)
-    parser.add_argument("--use_ddim", action="store_true")
+    parser.add_argument("--use_ddim", dest="use_ddim", action="store_true")
+    parser.add_argument("--use_ddpm", dest="use_ddim", action="store_false")
     parser.add_argument("--ddim_steps", type=int, default=200)
-    parser.add_argument("--ddim_eta", type=float, default=1.0)
+    parser.add_argument("--ddim_eta", type=float, default=0.0)
     parser.add_argument("--metrics", nargs="+", default=["PSNR", "SSIM"])
     parser.add_argument("--max_samples", type=int, default=0)
     parser.add_argument("--summary_json", default=None)
     parser.add_argument("--save_images", action="store_true")
     parser.add_argument("--save_sr_images", action="store_true")
     parser.add_argument("--save_max_samples", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=1234)
+    parser.add_argument("--use_ema", dest="use_ema", action="store_true")
+    parser.add_argument("--use_raw_weights", dest="use_ema", action="store_false")
+    parser.add_argument("--allow_incomplete_ckpt", dest="strict_checkpoint", action="store_false")
+    parser.set_defaults(use_ddim=True, use_ema=True, strict_checkpoint=True)
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -134,6 +140,8 @@ def main():
         rvrt_root=args.rvrt_root,
         rvrt_task=args.rvrt_task,
         rvrt_ckpt=args.rvrt_ckpt,
+        use_ema=args.use_ema,
+        strict_checkpoint=args.strict_checkpoint,
     )
     results = {metric: [] for metric in args.metrics}
     dataset_root_hr = args.dataset_root_hr
@@ -158,6 +166,7 @@ def main():
                 use_ddim=args.use_ddim,
                 ddim_steps=args.ddim_steps,
                 ddim_eta=args.ddim_eta,
+                seed=args.seed,
             )
 
         should_save = args.save_images and (args.save_max_samples <= 0 or idx <= args.save_max_samples)
@@ -189,6 +198,11 @@ def main():
             "split": args.split,
             "num_samples": len(triplet_folders),
             "average": average,
+            "use_ddim": args.use_ddim,
+            "ddim_eta": args.ddim_eta,
+            "seed": args.seed,
+            "use_ema": args.use_ema,
+            "strict_checkpoint": args.strict_checkpoint,
             "save_images": args.save_images,
             "save_sr_images": args.save_sr_images,
             "save_max_samples": args.save_max_samples,

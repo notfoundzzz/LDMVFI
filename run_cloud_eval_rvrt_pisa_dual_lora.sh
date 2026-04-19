@@ -45,6 +45,10 @@ SAVE_IMAGES="${SAVE_IMAGES:-0}"
 SAVE_SR_IMAGES="${SAVE_SR_IMAGES:-0}"
 SAVE_MAX_SAMPLES="${SAVE_MAX_SAMPLES:-0}"
 USE_RAW_WEIGHTS="${USE_RAW_WEIGHTS:-0}"
+USE_DDIM="${USE_DDIM:-1}"
+DDIM_ETA="${DDIM_ETA:-0}"
+SEED="${SEED:-1234}"
+ALLOW_INCOMPLETE_CKPT="${ALLOW_INCOMPLETE_CKPT:-0}"
 
 if [[ -z "$LDM_CKPT" ]]; then
   echo "LDM_CKPT is required"
@@ -70,6 +74,10 @@ echo "lora_target_suffixes=${LORA_TARGET_SUFFIXES:-default}"
 echo "pixel_scale=$PIXEL_SCALE"
 echo "semantic_scale=$SEMANTIC_SCALE"
 echo "use_raw_weights=$USE_RAW_WEIGHTS"
+echo "use_ddim=$USE_DDIM"
+echo "ddim_eta=$DDIM_ETA"
+echo "seed=$SEED"
+echo "allow_incomplete_ckpt=$ALLOW_INCOMPLETE_CKPT"
 
 if [ -n "$GPU_ID" ]; then
   export CUDA_VISIBLE_DEVICES="$GPU_ID"
@@ -109,8 +117,15 @@ for SPLIT_NAME in "${SPLIT_ARRAY[@]}"; do
     --semantic_scale "$SEMANTIC_SCALE"
     --max_samples "$MAX_SAMPLES"
     --summary_json "$SUMMARY_JSON"
-    --use_ddim
+    --ddim_eta "$DDIM_ETA"
+    --seed "$SEED"
   )
+
+  if [[ "$USE_DDIM" == "1" || "$USE_DDIM" == "true" ]]; then
+    CMD+=(--use_ddim)
+  else
+    CMD+=(--use_ddpm)
+  fi
 
   if [[ -n "$PIXEL_LORA_GROUPS" ]]; then
     IFS=',' read -r -a PIX_GROUPS <<< "$PIXEL_LORA_GROUPS"
@@ -126,6 +141,9 @@ for SPLIT_NAME in "${SPLIT_ARRAY[@]}"; do
   fi
   if [[ "$USE_RAW_WEIGHTS" == "1" || "$USE_RAW_WEIGHTS" == "true" ]]; then
     CMD+=(--use_raw_weights)
+  fi
+  if [[ "$ALLOW_INCOMPLETE_CKPT" == "1" || "$ALLOW_INCOMPLETE_CKPT" == "true" ]]; then
+    CMD+=(--allow_incomplete_ckpt)
   fi
   if [ -n "$CURRENT_LIST_FILE" ] && [ -f "$CURRENT_LIST_FILE" ]; then
     CMD+=(--list_file "$CURRENT_LIST_FILE")

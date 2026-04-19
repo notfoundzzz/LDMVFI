@@ -1,3 +1,5 @@
+from contextlib import nullcontext
+
 import torch
 
 from ldm.models.diffusion.ddim import DDIMSampler
@@ -6,6 +8,12 @@ from ldm.util import instantiate_from_config
 
 
 class RVRTLDMVFIPipeline:
+    """@brief Evaluate the stitched RVRT + LDMVFI pipeline safely.
+
+    @example Set `use_ema=False` to compare the raw finetuned weights with the
+    EMA-smoothed weights from the same checkpoint.
+    """
+
     def __init__(
         self,
         ldm_config,
@@ -18,18 +26,12 @@ class RVRTLDMVFIPipeline:
         device=None,
         tile=(0, 0, 0),
         tile_overlap=(2, 20, 20),
+        use_ema=True,
+        strict_checkpoint=True,
     ):
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.sr_frontend = build_sr_frontend(
-            sr_mode=sr_mode,
-            scale=scale,
-            rvrt_root=rvrt_root,
-            rvrt_task=rvrt_task,
-            rvrt_ckpt=rvrt_ckpt,
-            tile=tile,
-            tile_overlap=tile_overlap,
-        )
-        self.sr_frontend = self.sr_frontend.to(self.device).eval()
+        self.use_ema = bool(use_ema)
+        self.strict_checkpoint = bool(strict_checkpoint)
 
         self.model = instantiate_from_config(ldm_config.model)
         state = torch.load(ldm_ckpt, map_location="cpu")
@@ -56,7 +58,52 @@ class RVRTLDMVFIPipeline:
                     "Selected config expects LoRA weights, but checkpoint is missing them. "
                     f"First keys: {missing_lora[:10]}"
                 )
+        disallowed_missing = [key for key in missing if not self._is_allowed_missing_key(key)]
+        if self.strict_checkpoint and disallowed_missing:
+            raise ValueError(
+                "Checkpoint is missing required keys for the selected evaluation config. "
+                f"First keys: {disallowed_missing[:10]}"
+            )
         self.model = self.model.to(self.device).eval()
+        self.sr_frontend, self.sr_frontend_source = self._build_eval_frontend(
+            sr_mode=sr_mode,
+            scale=scale,
+            rvrt_root=rvrt_root,
+            rvrt_task=rvrt_task,
+            rvrt_ckpt=rvrt_ckpt,
+            tile=tile,
+            tile_overlap=tile_overlap,
+        )
+        print(f"Evaluation RVRT source: {self.sr_frontend_source}")
+
+    def _is_allowed_missing_key(self, key):
+        if key.startswith("model_ema.") and not self.use_ema:
+            return True
+        return False
+
+    def _build_eval_frontend(self, sr_mode, scale, rvrt_root, rvrt_task, rvrt_ckpt, tile, tile_overlap):
+        model_frontend = getattr(self.model, "rvrt_frontend", None)
+        if sr_mode == "rvrt" and model_frontend is not None:
+            frontend = model_frontend.to(self.device).eval()
+            return frontend, "checkpoint rvrt_frontend"
+
+        frontend = build_sr_frontend(
+            sr_mode=sr_mode,
+            scale=scale,
+            rvrt_root=rvrt_root,
+            rvrt_task=rvrt_task,
+            rvrt_ckpt=rvrt_ckpt,
+            tile=tile,
+            tile_overlap=tile_overlap,
+        )
+        return frontend.to(self.device).eval(), "external sr_frontend"
+
+    def _sampling_scope(self, seed):
+        if seed is None:
+            return nullcontext()
+
+        devices = [self.device] if self.device.type == "cuda" else []
+        return torch.random.fork_rng(devices=devices)
 
     @torch.no_grad()
     def super_resolve_neighbors(self, prev_lr, next_lr):
@@ -65,7 +112,7 @@ class RVRTLDMVFIPipeline:
         return out[:, 0], out[:, 1]
 
     @torch.no_grad()
-    def interpolate(self, prev_lr, next_lr, use_ddim=True, ddim_steps=200, ddim_eta=1.0):
+    def interpolate(self, prev_lr, next_lr, use_ddim=True, ddim_steps=200, ddim_eta=0.0, seed=None):
         prev_lr = prev_lr.to(self.device)
         next_lr = next_lr.to(self.device)
 
@@ -76,15 +123,27 @@ class RVRTLDMVFIPipeline:
         prev_sr = torch.clamp(prev_sr * 2.0 - 1.0, min=-1.0, max=1.0)
         next_sr = torch.clamp(next_sr * 2.0 - 1.0, min=-1.0, max=1.0)
 
-        with self.model.ema_scope() if hasattr(self.model, "ema_scope") else torch.no_grad():
+        scope = self.model.ema_scope() if self.use_ema and hasattr(self.model, "ema_scope") else nullcontext()
+        with scope:
             xc = {"prev_frame": prev_sr, "next_frame": next_sr}
             c, phi_prev_list, phi_next_list = self.model.get_learned_conditioning(xc)
             shape = (self.model.channels, c.shape[2], c.shape[3])
-            if use_ddim:
-                ddim = DDIMSampler(self.model)
-                latent, _ = ddim.sample(ddim_steps, c.shape[0], shape, c, eta=ddim_eta, verbose=False)
-            else:
-                latent = self.model.sample_ddpm(conditioning=c, batch_size=c.shape[0], shape=shape, x_T=None, verbose=False)
+            with self._sampling_scope(seed):
+                if seed is not None:
+                    torch.manual_seed(seed)
+                    if self.device.type == "cuda":
+                        torch.cuda.manual_seed_all(seed)
+                if use_ddim:
+                    ddim = DDIMSampler(self.model)
+                    latent, _ = ddim.sample(ddim_steps, c.shape[0], shape, c, eta=ddim_eta, verbose=False, x_T=None)
+                else:
+                    latent = self.model.sample_ddpm(
+                        conditioning=c,
+                        batch_size=c.shape[0],
+                        shape=shape,
+                        x_T=None,
+                        verbose=False,
+                    )
             if isinstance(latent, tuple):
                 latent = latent[0]
             out = self.model.decode_first_stage(latent, xc, phi_prev_list, phi_next_list)
