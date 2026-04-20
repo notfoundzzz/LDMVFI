@@ -1,3 +1,41 @@
+# 2026/04/20
+
+## Summary
+
+- Split PiSA Dual-LoRA target coverage into independent `pixel_target_suffixes` and `semantic_target_suffixes`.
+- Added `semantic_lr_scale` so the semantic optimizer group can use a higher learning rate than the pixel group.
+- Updated the default PiSA config to bias semantic training toward `decoder/others` and higher-level attention / FFN targets.
+- Updated the check and eval entrypoints to read and override the new pixel / semantic target metadata.
+- Made the cloud check wrapper clear CUDA-related environment variables before launching Python.
+
+## Files
+
+- `ldm/modules/pisa_dual_lora.py`
+- `ldm/models/diffusion/rvrt_pisa_dual_lora_ddpm.py`
+- `check_rvrt_pisa_dual_lora.py`
+- `evaluate_rvrt_pisa_dual_lora.py`
+- `configs/ldm/rvrt-pisa-dual-lora-stsr-x4.yaml`
+- `run_cloud_train_rvrt_pisa_dual_lora.sh`
+- `run_cloud_eval_rvrt_pisa_dual_lora.sh`
+- `run_cloud_check_rvrt_pisa_dual_lora.sh`
+
+## Manual Test
+
+1. Start a PiSA Dual-LoRA training run with the default config.
+   Expected: the log prints different `Pixel target suffixes` and `Semantic target suffixes`, and the semantic optimizer learning rate is higher.
+2. Run a deterministic pixel check after a checkpoint is produced.
+   Expected: `pixel_scale` changes still produce a clearly non-zero output difference.
+3. Run a deterministic semantic check after semantic training has progressed.
+   Expected: `semantic_scale` changes produce a larger output difference than before this patch.
+4. Launch `run_cloud_check_rvrt_pisa_dual_lora.sh` from a shell polluted by `(base)` conda variables.
+   Expected: the wrapper still initializes CUDA successfully because it clears `LD_LIBRARY_PATH`, `CUDA_HOME`, and `CUDA_PATH`.
+
+## Expected Result
+
+- Semantic adapters receive a stronger and more focused optimization signal.
+- Pixel and semantic branches no longer share exactly the same target layer set by default.
+- The default cloud check path is less fragile under mixed conda environments.
+
 # 2026/04/19
 
 ## Summary

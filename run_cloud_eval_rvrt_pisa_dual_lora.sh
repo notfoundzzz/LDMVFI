@@ -35,7 +35,8 @@ RVRT_TASK="${RVRT_TASK:-002_RVRT_videosr_bi_Vimeo_14frames}"
 RVRT_CKPT="${RVRT_CKPT:-$RVRT_ROOT/model_zoo/rvrt/${RVRT_TASK}.pth}"
 PIXEL_LORA_GROUPS="${PIXEL_LORA_GROUPS:-}"
 SEMANTIC_LORA_GROUPS="${SEMANTIC_LORA_GROUPS:-}"
-LORA_TARGET_SUFFIXES="${LORA_TARGET_SUFFIXES:-}"
+PIXEL_TARGET_SUFFIXES="${PIXEL_TARGET_SUFFIXES:-}"
+SEMANTIC_TARGET_SUFFIXES="${SEMANTIC_TARGET_SUFFIXES:-}"
 PIXEL_SCALE="${PIXEL_SCALE:-1.0}"
 SEMANTIC_SCALE="${SEMANTIC_SCALE:-1.0}"
 MAX_SAMPLES="${MAX_SAMPLES:-0}"
@@ -70,7 +71,8 @@ echo "ldm_ckpt=$LDM_CKPT"
 echo "splits=$SPLITS"
 echo "pixel_lora_groups=${PIXEL_LORA_GROUPS:-default}"
 echo "semantic_lora_groups=${SEMANTIC_LORA_GROUPS:-default}"
-echo "lora_target_suffixes=${LORA_TARGET_SUFFIXES:-default}"
+echo "pixel_target_suffixes=${PIXEL_TARGET_SUFFIXES:-default}"
+echo "semantic_target_suffixes=${SEMANTIC_TARGET_SUFFIXES:-default}"
 echo "pixel_scale=$PIXEL_SCALE"
 echo "semantic_scale=$SEMANTIC_SCALE"
 echo "use_raw_weights=$USE_RAW_WEIGHTS"
@@ -135,9 +137,13 @@ for SPLIT_NAME in "${SPLIT_ARRAY[@]}"; do
     IFS=',' read -r -a SEM_GROUPS <<< "$SEMANTIC_LORA_GROUPS"
     CMD+=(--semantic_lora_groups "${SEM_GROUPS[@]}")
   fi
-  if [[ -n "$LORA_TARGET_SUFFIXES" ]]; then
-    IFS=',' read -r -a TARGETS <<< "$LORA_TARGET_SUFFIXES"
-    CMD+=(--lora_target_suffixes "${TARGETS[@]}")
+  if [[ -n "$PIXEL_TARGET_SUFFIXES" ]]; then
+    IFS=',' read -r -a PIX_TARGETS <<< "$PIXEL_TARGET_SUFFIXES"
+    CMD+=(--pixel_target_suffixes "${PIX_TARGETS[@]}")
+  fi
+  if [[ -n "$SEMANTIC_TARGET_SUFFIXES" ]]; then
+    IFS=',' read -r -a SEM_TARGETS <<< "$SEMANTIC_TARGET_SUFFIXES"
+    CMD+=(--semantic_target_suffixes "${SEM_TARGETS[@]}")
   fi
   if [[ "$USE_RAW_WEIGHTS" == "1" || "$USE_RAW_WEIGHTS" == "true" ]]; then
     CMD+=(--use_raw_weights)

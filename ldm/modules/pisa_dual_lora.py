@@ -182,7 +182,8 @@ def inject_pisa_dual_lora_modules(
     semantic_alpha: float = 16.0,
     pixel_groups: Optional[Union[str, Sequence[str]]] = None,
     semantic_groups: Optional[Union[str, Sequence[str]]] = None,
-    target_suffixes: Optional[Union[str, Sequence[str]]] = None,
+    pixel_target_suffixes: Optional[Union[str, Sequence[str]]] = None,
+    semantic_target_suffixes: Optional[Union[str, Sequence[str]]] = None,
 ) -> Tuple[List[str], List[str], List[str]]:
     """@brief Inject PiSA-style dual LoRA modules into the LDMVFI UNet.
 
@@ -192,8 +193,26 @@ def inject_pisa_dual_lora_modules(
 
     pixel_groups = _normalize_items(pixel_groups, ("encoder", "decoder", "others"))
     semantic_groups = _normalize_items(semantic_groups, ("encoder", "decoder", "others"))
-    target_suffixes = _normalize_items(
-        target_suffixes,
+    default_target_suffixes = (
+        "to_q",
+        "to_k",
+        "to_v",
+        "to_out.0",
+        "qkv",
+        "proj_in",
+        "proj_out",
+        "ff.net.0.proj",
+        "ff.net.2",
+        "in_layers.2",
+        "out_layers.3",
+        "skip_connection",
+    )
+    pixel_target_suffixes = _normalize_items(
+        pixel_target_suffixes,
+        default_target_suffixes,
+    )
+    semantic_target_suffixes = _normalize_items(
+        semantic_target_suffixes,
         (
             "to_q",
             "to_k",
@@ -204,9 +223,6 @@ def inject_pisa_dual_lora_modules(
             "proj_out",
             "ff.net.0.proj",
             "ff.net.2",
-            "in_layers.2",
-            "out_layers.3",
-            "skip_connection",
         ),
     )
 
@@ -214,12 +230,20 @@ def inject_pisa_dual_lora_modules(
     pixel_targets: List[str] = []
     semantic_targets: List[str] = []
     for module_name, _ in list(root_module.named_modules()):
-        if not module_name or not _is_supported_target(module_name, target_suffixes):
+        if not module_name:
             continue
 
         group = _module_group(module_name)
-        use_pixel = pixel_rank > 0 and group in pixel_groups
-        use_semantic = semantic_rank > 0 and group in semantic_groups
+        use_pixel = (
+            pixel_rank > 0
+            and group in pixel_groups
+            and _is_supported_target(module_name, pixel_target_suffixes)
+        )
+        use_semantic = (
+            semantic_rank > 0
+            and group in semantic_groups
+            and _is_supported_target(module_name, semantic_target_suffixes)
+        )
         if not use_pixel and not use_semantic:
             continue
 

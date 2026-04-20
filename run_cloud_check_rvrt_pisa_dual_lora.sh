@@ -10,6 +10,9 @@ if [ -x "$DEFAULT_PYTHON_BIN" ]; then
 else
   PYTHON_BIN="${PYTHON_BIN:-python}"
 fi
+unset LD_LIBRARY_PATH || true
+unset CUDA_HOME || true
+unset CUDA_PATH || true
 PYTHON_DIR="$(dirname "$PYTHON_BIN")"
 if [ -d "$PYTHON_DIR" ]; then
   export PATH="$PYTHON_DIR:$PATH"
@@ -27,6 +30,10 @@ SAMPLE_INDEX="${SAMPLE_INDEX:-0}"
 RVRT_ROOT="${RVRT_ROOT:-/data/Shenzhen/zhahongli/RVRT}"
 RVRT_TASK="${RVRT_TASK:-002_RVRT_videosr_bi_Vimeo_14frames}"
 RVRT_CKPT="${RVRT_CKPT:-$RVRT_ROOT/model_zoo/rvrt/${RVRT_TASK}.pth}"
+PIXEL_LORA_GROUPS="${PIXEL_LORA_GROUPS:-}"
+SEMANTIC_LORA_GROUPS="${SEMANTIC_LORA_GROUPS:-}"
+PIXEL_TARGET_SUFFIXES="${PIXEL_TARGET_SUFFIXES:-}"
+SEMANTIC_TARGET_SUFFIXES="${SEMANTIC_TARGET_SUFFIXES:-}"
 PIXEL_SCALE_A="${PIXEL_SCALE_A:-1.0}"
 SEMANTIC_SCALE_A="${SEMANTIC_SCALE_A:-1.0}"
 PIXEL_SCALE_B="${PIXEL_SCALE_B:-1.0}"
@@ -53,6 +60,10 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 echo "ldm_ckpt=$LDM_CKPT"
 echo "ldm_config=$LDM_CONFIG"
 echo "split=$SPLIT"
+echo "pixel_lora_groups=${PIXEL_LORA_GROUPS:-default}"
+echo "semantic_lora_groups=${SEMANTIC_LORA_GROUPS:-default}"
+echo "pixel_target_suffixes=${PIXEL_TARGET_SUFFIXES:-default}"
+echo "semantic_target_suffixes=${SEMANTIC_TARGET_SUFFIXES:-default}"
 echo "pixel_scale_a=$PIXEL_SCALE_A"
 echo "semantic_scale_a=$SEMANTIC_SCALE_A"
 echo "pixel_scale_b=$PIXEL_SCALE_B"
@@ -95,6 +106,22 @@ fi
 
 if [[ -n "$LIST_FILE" ]]; then
   CMD+=(--list_file "$LIST_FILE")
+fi
+if [[ -n "$PIXEL_LORA_GROUPS" ]]; then
+  IFS=',' read -r -a PIX_GROUPS <<< "$PIXEL_LORA_GROUPS"
+  CMD+=(--pixel_lora_groups "${PIX_GROUPS[@]}")
+fi
+if [[ -n "$SEMANTIC_LORA_GROUPS" ]]; then
+  IFS=',' read -r -a SEM_GROUPS <<< "$SEMANTIC_LORA_GROUPS"
+  CMD+=(--semantic_lora_groups "${SEM_GROUPS[@]}")
+fi
+if [[ -n "$PIXEL_TARGET_SUFFIXES" ]]; then
+  IFS=',' read -r -a PIX_TARGETS <<< "$PIXEL_TARGET_SUFFIXES"
+  CMD+=(--pixel_target_suffixes "${PIX_TARGETS[@]}")
+fi
+if [[ -n "$SEMANTIC_TARGET_SUFFIXES" ]]; then
+  IFS=',' read -r -a SEM_TARGETS <<< "$SEMANTIC_TARGET_SUFFIXES"
+  CMD+=(--semantic_target_suffixes "${SEM_TARGETS[@]}")
 fi
 if [[ -n "$SAMPLE_NAME" ]]; then
   CMD+=(--sample_name "$SAMPLE_NAME")

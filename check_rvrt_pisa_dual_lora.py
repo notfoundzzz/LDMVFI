@@ -36,7 +36,14 @@ def summarize_branch_weights(ldm_ckpt):
     return summary
 
 
-def prepare_config(ldm_config_path, ldm_ckpt, pixel_groups=None, semantic_groups=None, target_suffixes=None):
+def prepare_config(
+    ldm_config_path,
+    ldm_ckpt,
+    pixel_groups=None,
+    semantic_groups=None,
+    pixel_target_suffixes=None,
+    semantic_target_suffixes=None,
+):
     ldm_config = OmegaConf.load(ldm_config_path)
     pixel_rank, semantic_rank = infer_dual_lora_ranks(ldm_ckpt)
     metadata = load_pisa_dual_lora_metadata(ldm_ckpt)
@@ -48,14 +55,24 @@ def prepare_config(ldm_config_path, ldm_ckpt, pixel_groups=None, semantic_groups
         ldm_config.model.params.pixel_lora_groups = list(metadata["pixel_lora_groups"])
     if "semantic_lora_groups" in metadata:
         ldm_config.model.params.semantic_lora_groups = list(metadata["semantic_lora_groups"])
-    if "lora_target_suffixes" in metadata:
-        ldm_config.model.params.lora_target_suffixes = list(metadata["lora_target_suffixes"])
+    if "pixel_target_suffixes" in metadata:
+        ldm_config.model.params.pixel_target_suffixes = list(metadata["pixel_target_suffixes"])
+    elif "lora_target_suffixes" in metadata:
+        ldm_config.model.params.pixel_target_suffixes = list(metadata["lora_target_suffixes"])
+    if "semantic_target_suffixes" in metadata:
+        ldm_config.model.params.semantic_target_suffixes = list(metadata["semantic_target_suffixes"])
+    elif "lora_target_suffixes" in metadata:
+        ldm_config.model.params.semantic_target_suffixes = list(metadata["lora_target_suffixes"])
+    if "semantic_lr_scale" in metadata:
+        ldm_config.model.params.semantic_lr_scale = metadata["semantic_lr_scale"]
     if pixel_groups:
         ldm_config.model.params.pixel_lora_groups = list(pixel_groups)
     if semantic_groups:
         ldm_config.model.params.semantic_lora_groups = list(semantic_groups)
-    if target_suffixes:
-        ldm_config.model.params.lora_target_suffixes = list(target_suffixes)
+    if pixel_target_suffixes:
+        ldm_config.model.params.pixel_target_suffixes = list(pixel_target_suffixes)
+    if semantic_target_suffixes:
+        ldm_config.model.params.semantic_target_suffixes = list(semantic_target_suffixes)
     return ldm_config
 
 
@@ -83,7 +100,8 @@ def compare_outputs(args):
         args.ldm_ckpt,
         pixel_groups=args.pixel_lora_groups,
         semantic_groups=args.semantic_lora_groups,
-        target_suffixes=args.lora_target_suffixes,
+        pixel_target_suffixes=args.pixel_target_suffixes,
+        semantic_target_suffixes=args.semantic_target_suffixes,
     )
 
     pipeline_a = RVRTPiSADualLoRAPipeline(
@@ -169,7 +187,8 @@ def main():
     parser.add_argument("--rvrt_ckpt", default=None)
     parser.add_argument("--pixel_lora_groups", nargs="*", default=None)
     parser.add_argument("--semantic_lora_groups", nargs="*", default=None)
-    parser.add_argument("--lora_target_suffixes", nargs="*", default=None)
+    parser.add_argument("--pixel_target_suffixes", nargs="*", default=None)
+    parser.add_argument("--semantic_target_suffixes", nargs="*", default=None)
     parser.add_argument("--pixel_scale_a", type=float, default=1.0)
     parser.add_argument("--semantic_scale_a", type=float, default=1.0)
     parser.add_argument("--pixel_scale_b", type=float, default=1.0)

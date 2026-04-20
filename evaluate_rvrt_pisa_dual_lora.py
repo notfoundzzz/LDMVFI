@@ -110,7 +110,8 @@ def main():
     parser.add_argument("--rvrt_ckpt", default=None)
     parser.add_argument("--pixel_lora_groups", nargs="*", default=None)
     parser.add_argument("--semantic_lora_groups", nargs="*", default=None)
-    parser.add_argument("--lora_target_suffixes", nargs="*", default=None)
+    parser.add_argument("--pixel_target_suffixes", nargs="*", default=None)
+    parser.add_argument("--semantic_target_suffixes", nargs="*", default=None)
     parser.add_argument("--pixel_scale", type=float, default=1.0)
     parser.add_argument("--semantic_scale", type=float, default=1.0)
     parser.add_argument("--use_ddim", dest="use_ddim", action="store_true")
@@ -142,14 +143,24 @@ def main():
         ldm_config.model.params.pixel_lora_groups = list(metadata["pixel_lora_groups"])
     if "semantic_lora_groups" in metadata:
         ldm_config.model.params.semantic_lora_groups = list(metadata["semantic_lora_groups"])
-    if "lora_target_suffixes" in metadata:
-        ldm_config.model.params.lora_target_suffixes = list(metadata["lora_target_suffixes"])
+    if "pixel_target_suffixes" in metadata:
+        ldm_config.model.params.pixel_target_suffixes = list(metadata["pixel_target_suffixes"])
+    elif "lora_target_suffixes" in metadata:
+        ldm_config.model.params.pixel_target_suffixes = list(metadata["lora_target_suffixes"])
+    if "semantic_target_suffixes" in metadata:
+        ldm_config.model.params.semantic_target_suffixes = list(metadata["semantic_target_suffixes"])
+    elif "lora_target_suffixes" in metadata:
+        ldm_config.model.params.semantic_target_suffixes = list(metadata["lora_target_suffixes"])
+    if "semantic_lr_scale" in metadata:
+        ldm_config.model.params.semantic_lr_scale = metadata["semantic_lr_scale"]
     if args.pixel_lora_groups:
         ldm_config.model.params.pixel_lora_groups = list(args.pixel_lora_groups)
     if args.semantic_lora_groups:
         ldm_config.model.params.semantic_lora_groups = list(args.semantic_lora_groups)
-    if args.lora_target_suffixes:
-        ldm_config.model.params.lora_target_suffixes = list(args.lora_target_suffixes)
+    if args.pixel_target_suffixes:
+        ldm_config.model.params.pixel_target_suffixes = list(args.pixel_target_suffixes)
+    if args.semantic_target_suffixes:
+        ldm_config.model.params.semantic_target_suffixes = list(args.semantic_target_suffixes)
 
     pipeline = RVRTPiSADualLoRAPipeline(
         ldm_config=ldm_config,

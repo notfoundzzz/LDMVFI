@@ -33,9 +33,11 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
         pixel_lora_alpha=16.0,
         semantic_lora_rank=8,
         semantic_lora_alpha=16.0,
+        semantic_lr_scale=1.0,
         pixel_lora_groups=None,
         semantic_lora_groups=None,
-        lora_target_suffixes=None,
+        pixel_target_suffixes=None,
+        semantic_target_suffixes=None,
         dual_lora_train_mode="joint",
         semantic_start_step=0,
         pixel_scale=1.0,
@@ -61,11 +63,12 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
         self.semantic_start_step = int(semantic_start_step)
         self.pixel_scale = float(pixel_scale)
         self.semantic_scale = float(semantic_scale)
+        self.semantic_lr_scale = float(semantic_lr_scale)
         self._active_stage = None
         self.pixel_lora_groups = self._normalize_items(pixel_lora_groups, ("encoder", "decoder", "others"))
-        self.semantic_lora_groups = self._normalize_items(semantic_lora_groups, ("encoder", "decoder", "others"))
-        self.lora_target_suffixes = self._normalize_items(
-            lora_target_suffixes,
+        self.semantic_lora_groups = self._normalize_items(semantic_lora_groups, ("decoder", "others"))
+        self.pixel_target_suffixes = self._normalize_items(
+            pixel_target_suffixes,
             (
                 "to_q",
                 "to_k",
@@ -79,6 +82,20 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
                 "in_layers.2",
                 "out_layers.3",
                 "skip_connection",
+            ),
+        )
+        self.semantic_target_suffixes = self._normalize_items(
+            semantic_target_suffixes,
+            (
+                "to_q",
+                "to_k",
+                "to_v",
+                "to_out.0",
+                "qkv",
+                "proj_in",
+                "proj_out",
+                "ff.net.0.proj",
+                "ff.net.2",
             ),
         )
 
@@ -109,7 +126,8 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
             semantic_alpha=semantic_lora_alpha,
             pixel_groups=self.pixel_lora_groups,
             semantic_groups=self.semantic_lora_groups,
-            target_suffixes=self.lora_target_suffixes,
+            pixel_target_suffixes=self.pixel_target_suffixes,
+            semantic_target_suffixes=self.semantic_target_suffixes,
         )
         if not self.dual_lora_targets:
             raise RuntimeError("No PiSA Dual-LoRA target modules were found in diffusion model")
@@ -119,6 +137,8 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
         )
         print(f"Pixel groups: {self.pixel_lora_groups}")
         print(f"Semantic groups: {self.semantic_lora_groups}")
+        print(f"Pixel target suffixes: {self.pixel_target_suffixes}")
+        print(f"Semantic target suffixes: {self.semantic_target_suffixes}")
 
         if self.use_ema:
             self.model_ema = LitEma(self.model)
@@ -130,11 +150,13 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
         checkpoint["pisa_dual_lora_metadata"] = {
             "pixel_lora_groups": list(self.pixel_lora_groups),
             "semantic_lora_groups": list(self.semantic_lora_groups),
-            "lora_target_suffixes": list(self.lora_target_suffixes),
+            "pixel_target_suffixes": list(self.pixel_target_suffixes),
+            "semantic_target_suffixes": list(self.semantic_target_suffixes),
             "dual_lora_train_mode": self.dual_lora_train_mode,
             "semantic_start_step": self.semantic_start_step,
             "pixel_scale": self.pixel_scale,
             "semantic_scale": self.semantic_scale,
+            "semantic_lr_scale": self.semantic_lr_scale,
         }
 
     def on_fit_start(self):
@@ -321,7 +343,13 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
         if pixel_params:
             params.append({"params": pixel_params, "lr": self.learning_rate, "name": "pixel_lora"})
         if semantic_params:
-            params.append({"params": semantic_params, "lr": self.learning_rate, "name": "semantic_lora"})
+            params.append(
+                {
+                    "params": semantic_params,
+                    "lr": self.learning_rate * self.semantic_lr_scale,
+                    "name": "semantic_lora",
+                }
+            )
 
         rvrt_params = [p for p in self.rvrt_frontend.parameters() if p.requires_grad]
         if rvrt_params:
@@ -333,7 +361,8 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
         opt = torch.optim.AdamW(params, lr=self.learning_rate)
         print(
             f"Optimizer groups: pixel={len(pixel_params)} params, semantic={len(semantic_params)} params, "
-            f"rvrt={len(rvrt_params)} params, lr={self.learning_rate:.2e}"
+            f"rvrt={len(rvrt_params)} params, pixel_lr={self.learning_rate:.2e}, "
+            f"semantic_lr={(self.learning_rate * self.semantic_lr_scale):.2e}"
         )
         if self.use_scheduler:
             scheduler = instantiate_from_config(self.scheduler_config)

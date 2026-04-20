@@ -40,7 +40,9 @@ SEMANTIC_LORA_RANK="${SEMANTIC_LORA_RANK:-}"
 SEMANTIC_LORA_ALPHA="${SEMANTIC_LORA_ALPHA:-}"
 PIXEL_LORA_GROUPS="${PIXEL_LORA_GROUPS:-}"
 SEMANTIC_LORA_GROUPS="${SEMANTIC_LORA_GROUPS:-}"
-LORA_TARGET_SUFFIXES="${LORA_TARGET_SUFFIXES:-}"
+PIXEL_TARGET_SUFFIXES="${PIXEL_TARGET_SUFFIXES:-}"
+SEMANTIC_TARGET_SUFFIXES="${SEMANTIC_TARGET_SUFFIXES:-}"
+SEMANTIC_LR_SCALE="${SEMANTIC_LR_SCALE:-}"
 DUAL_LORA_TRAIN_MODE="${DUAL_LORA_TRAIN_MODE:-}"
 SEMANTIC_START_STEP="${SEMANTIC_START_STEP:-}"
 PIXEL_SCALE="${PIXEL_SCALE:-}"
@@ -80,7 +82,9 @@ echo "rvrt_root=$RVRT_ROOT"
 echo "rvrt_ckpt=$RVRT_CKPT"
 echo "pixel_lora_groups=${PIXEL_LORA_GROUPS:-default}"
 echo "semantic_lora_groups=${SEMANTIC_LORA_GROUPS:-default}"
-echo "lora_target_suffixes=${LORA_TARGET_SUFFIXES:-default}"
+echo "pixel_target_suffixes=${PIXEL_TARGET_SUFFIXES:-default}"
+echo "semantic_target_suffixes=${SEMANTIC_TARGET_SUFFIXES:-default}"
+echo "semantic_lr_scale=${SEMANTIC_LR_SCALE:-default}"
 echo "dual_lora_train_mode=${DUAL_LORA_TRAIN_MODE:-default}"
 
 TRAINER_DOTLIST=()
@@ -111,8 +115,14 @@ fi
 if [[ -n "$SEMANTIC_LORA_GROUPS" ]]; then
   TRAINER_DOTLIST+=("model.params.semantic_lora_groups=$SEMANTIC_LORA_GROUPS")
 fi
-if [[ -n "$LORA_TARGET_SUFFIXES" ]]; then
-  TRAINER_DOTLIST+=("model.params.lora_target_suffixes=$LORA_TARGET_SUFFIXES")
+if [[ -n "$PIXEL_TARGET_SUFFIXES" ]]; then
+  TRAINER_DOTLIST+=("model.params.pixel_target_suffixes=$PIXEL_TARGET_SUFFIXES")
+fi
+if [[ -n "$SEMANTIC_TARGET_SUFFIXES" ]]; then
+  TRAINER_DOTLIST+=("model.params.semantic_target_suffixes=$SEMANTIC_TARGET_SUFFIXES")
+fi
+if [[ -n "$SEMANTIC_LR_SCALE" ]]; then
+  TRAINER_DOTLIST+=("model.params.semantic_lr_scale=$SEMANTIC_LR_SCALE")
 fi
 if [[ -n "$DUAL_LORA_TRAIN_MODE" ]]; then
   TRAINER_DOTLIST+=("model.params.dual_lora_train_mode=$DUAL_LORA_TRAIN_MODE")

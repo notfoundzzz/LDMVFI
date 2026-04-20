@@ -19,11 +19,12 @@ model:
     rvrt_ckpt: /data/Shenzhen/zhahongli/RVRT/model_zoo/rvrt/002_RVRT_videosr_bi_Vimeo_14frames.pth
     pixel_lora_rank: 8
     pixel_lora_alpha: 16.0
-    semantic_lora_rank: 8
-    semantic_lora_alpha: 16.0
+    semantic_lora_rank: 16
+    semantic_lora_alpha: 32.0
+    semantic_lr_scale: 4.0
     pixel_lora_groups: ["encoder", "decoder", "others"]
-    semantic_lora_groups: ["encoder", "decoder", "others"]
-    lora_target_suffixes:
+    semantic_lora_groups: ["decoder", "others"]
+    pixel_target_suffixes:
       - to_q
       - to_k
       - to_v
@@ -36,6 +37,16 @@ model:
       - in_layers.2
       - out_layers.3
       - skip_connection
+    semantic_target_suffixes:
+      - to_q
+      - to_k
+      - to_v
+      - to_out.0
+      - qkv
+      - proj_in
+      - proj_out
+      - ff.net.0.proj
+      - ff.net.2
     dual_lora_train_mode: joint
     semantic_start_step: 0
     pixel_scale: 1.0
