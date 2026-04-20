@@ -14,6 +14,18 @@ import utility
 from ldm.models.rvrt_ldmvfi_pipeline import RVRTLDMVFIPipeline
 
 
+def restore_flow_guidance_metadata(ldm_config, ckpt_path):
+    state = torch.load(ckpt_path, map_location="cpu")
+    metadata = state.get("rvrt_flow_guidance_metadata", None)
+    if not metadata:
+        return
+    params = ldm_config.model.params
+    if "use_flow_guidance" in metadata:
+        params.use_flow_guidance = bool(metadata["use_flow_guidance"])
+    if "flow_guidance_strength" in metadata:
+        params.flow_guidance_strength = float(metadata["flow_guidance_strength"])
+
+
 def infer_lora_rank_from_checkpoint(ckpt_path):
     state = torch.load(ckpt_path, map_location="cpu")
     state_dict = state["state_dict"] if "state_dict" in state else state
@@ -123,6 +135,7 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     ldm_config = OmegaConf.load(args.ldm_config)
+    restore_flow_guidance_metadata(ldm_config, args.ldm_ckpt)
     inferred_lora_rank = infer_lora_rank_from_checkpoint(args.ldm_ckpt)
     if inferred_lora_rank is not None:
         cfg_rank = ldm_config.model.params.get("lora_rank", None)
@@ -203,6 +216,8 @@ def main():
             "seed": args.seed,
             "use_ema": args.use_ema,
             "strict_checkpoint": args.strict_checkpoint,
+            "use_flow_guidance": bool(ldm_config.model.params.get("use_flow_guidance", False)),
+            "flow_guidance_strength": float(ldm_config.model.params.get("flow_guidance_strength", 0.0)),
             "save_images": args.save_images,
             "save_sr_images": args.save_sr_images,
             "save_max_samples": args.save_max_samples,

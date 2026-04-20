@@ -65,6 +65,10 @@ def prepare_config(
         ldm_config.model.params.semantic_target_suffixes = list(metadata["lora_target_suffixes"])
     if "semantic_lr_scale" in metadata:
         ldm_config.model.params.semantic_lr_scale = metadata["semantic_lr_scale"]
+    if "use_flow_guidance" in metadata:
+        ldm_config.model.params.use_flow_guidance = metadata["use_flow_guidance"]
+    if "flow_guidance_strength" in metadata:
+        ldm_config.model.params.flow_guidance_strength = metadata["flow_guidance_strength"]
     if pixel_groups:
         ldm_config.model.params.pixel_lora_groups = list(pixel_groups)
     if semantic_groups:
@@ -124,6 +128,7 @@ def compare_outputs(args):
         ddim_eta=args.ddim_eta,
         seed=args.seed,
     )
+    flow_prior = getattr(pipeline_a, "last_flow_prior", None)
 
     pipeline_b = RVRTPiSADualLoRAPipeline(
         ldm_config=ldm_config,
@@ -166,6 +171,8 @@ def compare_outputs(args):
         save_image(diff / diff.max().clamp_min(1.0e-8), join(args.save_dir, "output_diff.png"))
         save_image(prev_sr, join(args.save_dir, "prev_sr.png"), value_range=(-1, 1), normalize=True)
         save_image(next_sr, join(args.save_dir, "next_sr.png"), value_range=(-1, 1), normalize=True)
+        if flow_prior is not None:
+            save_image(flow_prior, join(args.save_dir, "flow_prior.png"), value_range=(-1, 1), normalize=True)
 
     return result
 

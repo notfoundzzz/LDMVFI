@@ -4,6 +4,7 @@ import torch
 from torch.optim.lr_scheduler import LambdaLR
 
 from ldm.models.diffusion.ddpm import LatentDiffusionVFI
+from ldm.models.flow_guidance import build_flow_guided_middle_prior
 from ldm.models.rvrt_frontend import build_sr_frontend
 from ldm.modules.ema import LitEma
 from ldm.modules.pisa_dual_lora import (
@@ -49,6 +50,9 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
         lr_next_key="next_frame_lr",
         cond_prev_key="prev_frame",
         cond_next_key="next_frame",
+        cond_flow_key="flow_prior",
+        use_flow_guidance=False,
+        flow_guidance_strength=0.25,
         *args,
         **kwargs,
     ):
@@ -57,6 +61,7 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
         self.lr_next_key = lr_next_key
         self.cond_prev_key = cond_prev_key
         self.cond_next_key = cond_next_key
+        self.cond_flow_key = cond_flow_key
         self.rvrt_train_mode = rvrt_train_mode
         self.rvrt_lr = rvrt_lr
         self.dual_lora_train_mode = dual_lora_train_mode
@@ -64,6 +69,8 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
         self.pixel_scale = float(pixel_scale)
         self.semantic_scale = float(semantic_scale)
         self.semantic_lr_scale = float(semantic_lr_scale)
+        self.use_flow_guidance = bool(use_flow_guidance)
+        self.flow_guidance_strength = float(flow_guidance_strength)
         self._active_stage = None
         self.pixel_lora_groups = self._normalize_items(pixel_lora_groups, ("encoder", "decoder", "others"))
         self.semantic_lora_groups = self._normalize_items(semantic_lora_groups, ("decoder", "others"))
@@ -139,6 +146,7 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
         print(f"Semantic groups: {self.semantic_lora_groups}")
         print(f"Pixel target suffixes: {self.pixel_target_suffixes}")
         print(f"Semantic target suffixes: {self.semantic_target_suffixes}")
+        print(f"Flow guidance enabled: {self.use_flow_guidance}, strength={self.flow_guidance_strength:.3f}")
 
         if self.use_ema:
             self.model_ema = LitEma(self.model)
@@ -157,6 +165,8 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
             "pixel_scale": self.pixel_scale,
             "semantic_scale": self.semantic_scale,
             "semantic_lr_scale": self.semantic_lr_scale,
+            "use_flow_guidance": self.use_flow_guidance,
+            "flow_guidance_strength": self.flow_guidance_strength,
         }
 
     def on_fit_start(self):
@@ -298,6 +308,33 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
         next_sr = torch.clamp(out[:, 1] * 2.0 - 1.0, min=-1.0, max=1.0)
         return prev_sr, next_sr
 
+    def _build_flow_guided_prior(self, prev_lr, next_lr, prev_target, next_target):
+        return build_flow_guided_middle_prior(prev_lr, next_lr, prev_target, next_target)
+
+    def get_learned_conditioning(self, c):
+        phi_prev_list, phi_next_list = None, None
+        if isinstance(c, dict) and self.cond_prev_key in c.keys():
+            c_prev, phi_prev_list = self.cond_stage_model.encode(c[self.cond_prev_key], ret_feature=True)
+            c_next, phi_next_list = self.cond_stage_model.encode(c[self.cond_next_key], ret_feature=True)
+            if self.use_flow_guidance and self.cond_flow_key in c:
+                c_flow, phi_flow_list = self.cond_stage_model.encode(c[self.cond_flow_key], ret_feature=True)
+                mix = self.flow_guidance_strength
+                c_prev = (1.0 - mix) * c_prev + mix * c_flow
+                c_next = (1.0 - mix) * c_next + mix * c_flow
+                if phi_prev_list is not None and phi_next_list is not None and phi_flow_list is not None:
+                    phi_prev_list = [
+                        None if prev_feat is None else (1.0 - mix) * prev_feat + mix * flow_feat
+                        for prev_feat, flow_feat in zip(phi_prev_list, phi_flow_list)
+                    ]
+                    phi_next_list = [
+                        None if next_feat is None else (1.0 - mix) * next_feat + mix * flow_feat
+                        for next_feat, flow_feat in zip(phi_next_list, phi_flow_list)
+                    ]
+            c = torch.cat([c_prev, c_next], dim=1)
+        else:
+            c = self.cond_stage_model.encode(c)
+        return c, phi_prev_list, phi_next_list
+
     def get_input(
         self,
         batch,
@@ -320,6 +357,13 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
 
         prev_sr, next_sr = self._super_resolve_neighbors(batch, bs=bs)
         xc = {self.cond_prev_key: prev_sr, self.cond_next_key: next_sr}
+        if self.use_flow_guidance:
+            prev_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_prev_key).to(self.device)
+            next_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_next_key).to(self.device)
+            if bs is not None:
+                prev_lr = prev_lr[:bs]
+                next_lr = next_lr[:bs]
+            xc[self.cond_flow_key] = self._build_flow_guided_prior(prev_lr, next_lr, prev_sr, next_sr)
         c, phi_prev_list, phi_next_list = self.get_learned_conditioning(xc)
 
         out = [z, c]

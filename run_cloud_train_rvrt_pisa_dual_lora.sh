@@ -43,6 +43,8 @@ SEMANTIC_LORA_GROUPS="${SEMANTIC_LORA_GROUPS:-}"
 PIXEL_TARGET_SUFFIXES="${PIXEL_TARGET_SUFFIXES:-}"
 SEMANTIC_TARGET_SUFFIXES="${SEMANTIC_TARGET_SUFFIXES:-}"
 SEMANTIC_LR_SCALE="${SEMANTIC_LR_SCALE:-}"
+USE_FLOW_GUIDANCE="${USE_FLOW_GUIDANCE:-}"
+FLOW_GUIDANCE_STRENGTH="${FLOW_GUIDANCE_STRENGTH:-}"
 DUAL_LORA_TRAIN_MODE="${DUAL_LORA_TRAIN_MODE:-}"
 SEMANTIC_START_STEP="${SEMANTIC_START_STEP:-}"
 PIXEL_SCALE="${PIXEL_SCALE:-}"
@@ -85,6 +87,8 @@ echo "semantic_lora_groups=${SEMANTIC_LORA_GROUPS:-default}"
 echo "pixel_target_suffixes=${PIXEL_TARGET_SUFFIXES:-default}"
 echo "semantic_target_suffixes=${SEMANTIC_TARGET_SUFFIXES:-default}"
 echo "semantic_lr_scale=${SEMANTIC_LR_SCALE:-default}"
+echo "use_flow_guidance=${USE_FLOW_GUIDANCE:-default}"
+echo "flow_guidance_strength=${FLOW_GUIDANCE_STRENGTH:-default}"
 echo "dual_lora_train_mode=${DUAL_LORA_TRAIN_MODE:-default}"
 
 TRAINER_DOTLIST=()
@@ -123,6 +127,12 @@ if [[ -n "$SEMANTIC_TARGET_SUFFIXES" ]]; then
 fi
 if [[ -n "$SEMANTIC_LR_SCALE" ]]; then
   TRAINER_DOTLIST+=("model.params.semantic_lr_scale=$SEMANTIC_LR_SCALE")
+fi
+if [[ -n "$USE_FLOW_GUIDANCE" ]]; then
+  TRAINER_DOTLIST+=("model.params.use_flow_guidance=$USE_FLOW_GUIDANCE")
+fi
+if [[ -n "$FLOW_GUIDANCE_STRENGTH" ]]; then
+  TRAINER_DOTLIST+=("model.params.flow_guidance_strength=$FLOW_GUIDANCE_STRENGTH")
 fi
 if [[ -n "$DUAL_LORA_TRAIN_MODE" ]]; then
   TRAINER_DOTLIST+=("model.params.dual_lora_train_mode=$DUAL_LORA_TRAIN_MODE")

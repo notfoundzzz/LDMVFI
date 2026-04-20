@@ -3,6 +3,7 @@ from contextlib import nullcontext
 import torch
 
 from ldm.models.diffusion.ddim import DDIMSampler
+from ldm.models.flow_guidance import build_flow_guided_middle_prior
 from ldm.models.rvrt_frontend import build_sr_frontend
 from ldm.util import instantiate_from_config
 
@@ -32,6 +33,7 @@ class RVRTLDMVFIPipeline:
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.use_ema = bool(use_ema)
         self.strict_checkpoint = bool(strict_checkpoint)
+        self.last_flow_prior = None
 
         self.model = instantiate_from_config(ldm_config.model)
         state = torch.load(ldm_ckpt, map_location="cpu")
@@ -126,6 +128,11 @@ class RVRTLDMVFIPipeline:
         scope = self.model.ema_scope() if self.use_ema and hasattr(self.model, "ema_scope") else nullcontext()
         with scope:
             xc = {"prev_frame": prev_sr, "next_frame": next_sr}
+            if getattr(self.model, "use_flow_guidance", False):
+                self.last_flow_prior = build_flow_guided_middle_prior(prev_lr, next_lr, prev_sr, next_sr)
+                xc[getattr(self.model, "cond_flow_key", "flow_prior")] = self.last_flow_prior
+            else:
+                self.last_flow_prior = None
             c, phi_prev_list, phi_next_list = self.model.get_learned_conditioning(xc)
             shape = (self.model.channels, c.shape[2], c.shape[3])
             with self._sampling_scope(seed):

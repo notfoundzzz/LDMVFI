@@ -1,5 +1,60 @@
 # 2026/04/20
 
+## 纯光流引导版本
+
+- 新增 `rvrt_flow_guided_ddpm.py`，从 `RVRT + LDMVFI` 主线拆出不带 LoRA 的纯光流引导训练类。
+- 光流版仍保持 `RVRT` 冻结，只训练 diffusion UNet；额外通过 `flow-guided middle prior` 增强条件分支。
+- 新增配置 `configs/ldm/rvrt-flow-guided-stsr-x4.yaml` 与脚本 `run_cloud_train_rvrt_flow_guided.sh`，用于单独验证光流引导本身的效果。
+- 评测管线 `rvrt_ldmvfi_pipeline.py` 也补上了 flow prior 注入，这样训练和评测链路一致。
+
+## 人工测试方式
+
+1. 运行 `run_cloud_train_rvrt_flow_guided.sh`。
+2. 观察日志中出现 `Flow guidance enabled: True`，且不出现任何 LoRA 注入日志。
+3. 使用 `configs/ldm/rvrt-flow-guided-stsr-x4.yaml` 跑 `run_cloud_eval_rvrt_ldmvfi.sh`。
+4. 对比纯 `RVRT + pretrained/full-tune LDMVFI` 与 flow-guided 版本的 `PSNR/SSIM`。
+
+## 预期结果
+
+- 训练时只会打印 diffusion UNet 的优化器信息，不会出现 `Injected LoRA` 或 `Injected PiSA Dual-LoRA`。
+- 评测时若 checkpoint 带有 flow metadata，链路会自动恢复 `use_flow_guidance` 和 `flow_guidance_strength`。
+
+# 2026/04/20
+
+## Summary
+
+- Added a minimal optical-flow-guided conditioning path for the PiSA Dual-LoRA line.
+- The new path builds a `flow-guided middle prior` from LR-neighbor Farneback flow and fuses its encoded features into the original `prev/next` conditioning features.
+- Kept the diffusion UNet input dimension unchanged by fusing the flow prior in conditioning space instead of concatenating a third condition latent.
+- Added a dedicated flow-guided config file for experiments closer to the thesis topic.
+
+## Files
+
+- `ldm/models/flow_guidance.py`
+- `ldm/models/diffusion/rvrt_pisa_dual_lora_ddpm.py`
+- `ldm/models/rvrt_pisa_dual_lora_pipeline.py`
+- `check_rvrt_pisa_dual_lora.py`
+- `evaluate_rvrt_pisa_dual_lora.py`
+- `run_cloud_train_rvrt_pisa_dual_lora.sh`
+- `configs/ldm/rvrt-pisa-dual-lora-flow-stsr-x4.yaml`
+
+## Manual Test
+
+1. Start training with `configs/ldm/rvrt-pisa-dual-lora-flow-stsr-x4.yaml`.
+   Expected: the startup log prints `Flow guidance enabled: True`.
+2. Run a deterministic check with the new flow-guided config.
+   Expected: `check_results_rvrt_pisa_dual_lora/flow_prior.png` is saved.
+3. Compare flow-guided and non-flow-guided runs on the same checkpoint family.
+   Expected: the flow-guided path changes the conditioning and may alter both pixel and semantic output differences.
+
+## Expected Result
+
+- The method becomes closer to “optical-flow-guided generative video spatio-temporal super-resolution”.
+- Flow guidance is introduced without changing the main diffusion UNet channel dimensions.
+- The new path is suitable for a lightweight thesis-oriented ablation.
+
+# 2026/04/20
+
 ## Summary
 
 - Split PiSA Dual-LoRA target coverage into independent `pixel_target_suffixes` and `semantic_target_suffixes`.
