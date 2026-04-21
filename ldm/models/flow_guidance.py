@@ -62,10 +62,30 @@ def _build_raft_model(variant: str, ckpt_path: str, device: torch.device):
     if not os.path.isfile(ckpt_path):
         raise FileNotFoundError(f"RAFT checkpoint not found: {ckpt_path}")
 
+    def _create_raft(constructor):
+        """@brief 兼容新旧 torchvision 接口创建 RAFT 模型。
+
+        @example 新版通常支持 `weights=None`，旧版可能只接受
+        `pretrained=False` 或完全无参构造，因此这里按顺序回退。
+        """
+        build_attempts = (
+            lambda: constructor(weights=None, progress=False),
+            lambda: constructor(pretrained=False, progress=False),
+            lambda: constructor(pretrained=False),
+            lambda: constructor(),
+        )
+        last_error = None
+        for build in build_attempts:
+            try:
+                return build()
+            except TypeError as exc:
+                last_error = exc
+        raise last_error
+
     if variant == "small":
-        model = raft_small(weights=None, progress=False)
+        model = _create_raft(raft_small)
     elif variant == "large":
-        model = raft_large(weights=None, progress=False)
+        model = _create_raft(raft_large)
     else:
         raise ValueError(f"Unsupported RAFT variant: {variant}")
 
