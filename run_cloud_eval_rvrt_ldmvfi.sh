@@ -47,6 +47,7 @@ SEED="${SEED:-1234}"
 USE_RAW_WEIGHTS="${USE_RAW_WEIGHTS:-0}"
 ALLOW_INCOMPLETE_CKPT="${ALLOW_INCOMPLETE_CKPT:-0}"
 FLOW_BACKEND="${FLOW_BACKEND:-}"
+FLOW_CONDITION_MODE="${FLOW_CONDITION_MODE:-}"
 FLOW_RAFT_VARIANT="${FLOW_RAFT_VARIANT:-}"
 FLOW_RAFT_CKPT="${FLOW_RAFT_CKPT:-}"
 
@@ -86,6 +87,7 @@ echo "ddim_eta=$DDIM_ETA"
 echo "seed=$SEED"
 echo "use_raw_weights=$USE_RAW_WEIGHTS"
 echo "allow_incomplete_ckpt=$ALLOW_INCOMPLETE_CKPT"
+echo "flow_condition_mode=${FLOW_CONDITION_MODE:-default}"
 echo "flow_backend=${FLOW_BACKEND:-default}"
 echo "flow_raft_variant=${FLOW_RAFT_VARIANT:-default}"
 echo "flow_raft_ckpt=${FLOW_RAFT_CKPT:-default}"
@@ -171,6 +173,9 @@ for SPLIT_NAME in "${SPLIT_ARRAY[@]}"; do
   fi
   if [[ -n "$FLOW_BACKEND" ]]; then
     CMD+=(--flow_backend "$FLOW_BACKEND")
+  fi
+  if [[ -n "$FLOW_CONDITION_MODE" ]]; then
+    CMD+=(--flow_condition_mode "$FLOW_CONDITION_MODE")
   fi
   if [[ -n "$FLOW_RAFT_VARIANT" ]]; then
     CMD+=(--flow_raft_variant "$FLOW_RAFT_VARIANT")

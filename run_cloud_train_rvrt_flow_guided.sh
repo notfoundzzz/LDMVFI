@@ -35,6 +35,7 @@ SAVE_TRAIN_IMAGES="${SAVE_TRAIN_IMAGES:-0}"
 MODEL_BASE_LR="${MODEL_BASE_LR:-}"
 USE_FLOW_GUIDANCE="${USE_FLOW_GUIDANCE:-1}"
 FLOW_GUIDANCE_STRENGTH="${FLOW_GUIDANCE_STRENGTH:-0.25}"
+FLOW_CONDITION_MODE="${FLOW_CONDITION_MODE:-}"
 FLOW_BACKEND="${FLOW_BACKEND:-}"
 FLOW_RAFT_VARIANT="${FLOW_RAFT_VARIANT:-}"
 FLOW_RAFT_CKPT="${FLOW_RAFT_CKPT:-}"
@@ -72,6 +73,7 @@ echo "save_train_images=$SAVE_TRAIN_IMAGES"
 echo "model_base_lr=${MODEL_BASE_LR:-default}"
 echo "use_flow_guidance=$USE_FLOW_GUIDANCE"
 echo "flow_guidance_strength=$FLOW_GUIDANCE_STRENGTH"
+echo "flow_condition_mode=${FLOW_CONDITION_MODE:-default}"
 echo "flow_backend=${FLOW_BACKEND:-default}"
 echo "flow_raft_variant=${FLOW_RAFT_VARIANT:-default}"
 echo "flow_raft_ckpt=${FLOW_RAFT_CKPT:-default}"
@@ -116,6 +118,9 @@ CMD=(
   model.params.flow_guidance_strength="$FLOW_GUIDANCE_STRENGTH"
 )
 
+if [[ -n "$FLOW_CONDITION_MODE" ]]; then
+  CMD+=(model.params.flow_condition_mode="$FLOW_CONDITION_MODE")
+fi
 if [[ -n "$FLOW_BACKEND" ]]; then
   CMD+=(model.params.flow_backend="$FLOW_BACKEND")
 fi

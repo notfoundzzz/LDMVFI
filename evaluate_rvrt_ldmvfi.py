@@ -24,6 +24,8 @@ def restore_flow_guidance_metadata(ldm_config, ckpt_path):
         params.use_flow_guidance = bool(metadata["use_flow_guidance"])
     if "flow_guidance_strength" in metadata:
         params.flow_guidance_strength = float(metadata["flow_guidance_strength"])
+    if "flow_condition_mode" in metadata:
+        params.flow_condition_mode = metadata["flow_condition_mode"]
     if "flow_backend" in metadata:
         params.flow_backend = metadata["flow_backend"]
     if "flow_raft_variant" in metadata:
@@ -136,6 +138,7 @@ def main():
     parser.add_argument("--use_raw_weights", dest="use_ema", action="store_false")
     parser.add_argument("--allow_incomplete_ckpt", dest="strict_checkpoint", action="store_false")
     parser.add_argument("--flow_backend", default=None)
+    parser.add_argument("--flow_condition_mode", default=None)
     parser.add_argument("--flow_raft_variant", default=None)
     parser.add_argument("--flow_raft_ckpt", default=None)
     parser.set_defaults(use_ddim=True, use_ema=True, strict_checkpoint=True)
@@ -147,6 +150,8 @@ def main():
     restore_flow_guidance_metadata(ldm_config, args.ldm_ckpt)
     if args.flow_backend:
         ldm_config.model.params.flow_backend = args.flow_backend
+    if args.flow_condition_mode:
+        ldm_config.model.params.flow_condition_mode = args.flow_condition_mode
     if args.flow_raft_variant:
         ldm_config.model.params.flow_raft_variant = args.flow_raft_variant
     if args.flow_raft_ckpt:
@@ -233,6 +238,7 @@ def main():
             "strict_checkpoint": args.strict_checkpoint,
             "use_flow_guidance": bool(ldm_config.model.params.get("use_flow_guidance", False)),
             "flow_guidance_strength": float(ldm_config.model.params.get("flow_guidance_strength", 0.0)),
+            "flow_condition_mode": str(ldm_config.model.params.get("flow_condition_mode", "fused")),
             "flow_backend": str(ldm_config.model.params.get("flow_backend", "farneback")),
             "flow_raft_variant": str(ldm_config.model.params.get("flow_raft_variant", "large")),
             "flow_raft_ckpt": ldm_config.model.params.get("flow_raft_ckpt", None),

@@ -8,10 +8,11 @@ from ldm.util import instantiate_from_config
 
 
 class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
-    """@brief 纯光流引导的 RVRT + LDMVFI 训练类，不引入 LoRA 分支。
+    """@brief 纯光流引导的 RVRT + LDMVFI 训练类。
 
-    @example 输入前后 LR 邻帧后，先由 RVRT 生成 SR 条件帧，再构造
-    `flow-guided middle prior` 融合进条件编码，用于训练 diffusion UNet。
+    @example
+    输入前后 LR 邻帧后，先由 RVRT 生成 SR 条件帧，再构造 `flow-guided middle prior`，
+    最后将该先验注入条件编码路径，用于训练 diffusion UNet。
     """
 
     def __init__(
@@ -28,6 +29,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         cond_flow_key="flow_prior",
         use_flow_guidance=True,
         flow_guidance_strength=0.25,
+        flow_condition_mode="fused",
         flow_backend="farneback",
         flow_raft_variant="large",
         flow_raft_ckpt=None,
@@ -42,9 +44,20 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         self.cond_flow_key = cond_flow_key
         self.use_flow_guidance = bool(use_flow_guidance)
         self.flow_guidance_strength = float(flow_guidance_strength)
+        self.flow_condition_mode = str(flow_condition_mode)
         self.flow_backend = str(flow_backend)
         self.flow_raft_variant = str(flow_raft_variant)
         self.flow_raft_ckpt = flow_raft_ckpt
+        self.cond_latent_channels = int(getattr(self.cond_stage_model, "embed_dim", self.channels))
+        self.flow_condition_fuser = None
+        if self.use_flow_guidance and self.flow_condition_mode == "explicit":
+            # @brief 显式第三条件模式下，先分别编码 prev / flow / next 三路条件。
+            # @example 再使用 1x1 融合层压回现有两路条件通道数，避免修改 UNet in_channels。
+            self.flow_condition_fuser = torch.nn.Conv2d(
+                self.cond_latent_channels * 3,
+                self.cond_latent_channels * 2,
+                kernel_size=1,
+            )
 
         self.rvrt_frontend = build_sr_frontend(
             sr_mode="rvrt",
@@ -72,7 +85,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         print("First-stage and cond-stage frozen")
         print(
             f"Flow guidance enabled: {self.use_flow_guidance}, strength={self.flow_guidance_strength:.3f}, "
-            f"backend={self.flow_backend}, raft_variant={self.flow_raft_variant}"
+            f"mode={self.flow_condition_mode}, backend={self.flow_backend}, raft_variant={self.flow_raft_variant}"
         )
 
     def on_save_checkpoint(self, checkpoint):
@@ -80,6 +93,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         checkpoint["rvrt_flow_guidance_metadata"] = {
             "use_flow_guidance": self.use_flow_guidance,
             "flow_guidance_strength": self.flow_guidance_strength,
+            "flow_condition_mode": self.flow_condition_mode,
             "flow_backend": self.flow_backend,
             "flow_raft_variant": self.flow_raft_variant,
             "flow_raft_ckpt": self.flow_raft_ckpt,
@@ -91,10 +105,10 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
 
     @torch.no_grad()
     def _super_resolve_neighbors(self, batch, bs=None):
-        """@brief 用冻结 RVRT 将 LR 邻帧提升到 SR 条件帧。
+        """@brief 使用冻结的 RVRT 将 LR 邻帧提升为 SR 条件帧。
 
-        @example `prev_frame_lr/next_frame_lr -> prev_sr/next_sr`，
-        后续既作为原始条件，也作为光流中间先验的 warp 目标帧。
+        @example
+        `prev_frame_lr / next_frame_lr -> prev_sr / next_sr`
         """
         prev_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_prev_key).to(self.device)
         next_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_next_key).to(self.device)
@@ -111,7 +125,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         return prev_sr, next_sr
 
     def _build_flow_guided_prior(self, prev_lr, next_lr, prev_target, next_target):
-        """@brief 基于 LR 邻帧估计光流，并在 SR 条件帧上构造中间时刻先验。"""
+        """@brief 构造光流引导的中间时刻先验帧。"""
         return build_flow_guided_middle_prior(
             prev_lr,
             next_lr,
@@ -123,10 +137,12 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         )
 
     def get_learned_conditioning(self, c):
-        """@brief 将光流先验编码后融合进前后邻帧条件特征。
+        """@brief 编码并融合前帧、光流先验、后帧条件。
 
-        @example 当 `flow_guidance_strength=0.25` 时，
-        每路条件特征按 `0.75 * 原条件 + 0.25 * flow条件` 融合。
+        @example
+        - `fused`：沿用旧逻辑，将 `flow_prior` 弱融合到 `prev/next` 条件中。
+        - `explicit`：显式编码 `prev / flow / next` 三路条件，再通过 1x1 融合层压回
+          当前两路条件通道数。
         """
         phi_prev_list, phi_next_list = None, None
         if isinstance(c, dict) and self.cond_prev_key in c.keys():
@@ -135,18 +151,32 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             if self.use_flow_guidance and self.cond_flow_key in c:
                 c_flow, phi_flow_list = self.cond_stage_model.encode(c[self.cond_flow_key], ret_feature=True)
                 mix = self.flow_guidance_strength
-                c_prev = (1.0 - mix) * c_prev + mix * c_flow
-                c_next = (1.0 - mix) * c_next + mix * c_flow
-                if phi_prev_list is not None and phi_next_list is not None and phi_flow_list is not None:
-                    phi_prev_list = [
-                        None if prev_feat is None else (1.0 - mix) * prev_feat + mix * flow_feat
-                        for prev_feat, flow_feat in zip(phi_prev_list, phi_flow_list)
-                    ]
-                    phi_next_list = [
-                        None if next_feat is None else (1.0 - mix) * next_feat + mix * flow_feat
-                        for next_feat, flow_feat in zip(phi_next_list, phi_flow_list)
-                    ]
-            c = torch.cat([c_prev, c_next], dim=1)
+                if self.flow_condition_mode == "explicit":
+                    c = self.flow_condition_fuser(torch.cat([c_prev, c_flow, c_next], dim=1))
+                    if phi_prev_list is not None and phi_next_list is not None and phi_flow_list is not None:
+                        phi_prev_list = [
+                            None if prev_feat is None else prev_feat + mix * flow_feat
+                            for prev_feat, flow_feat in zip(phi_prev_list, phi_flow_list)
+                        ]
+                        phi_next_list = [
+                            None if next_feat is None else next_feat + mix * flow_feat
+                            for next_feat, flow_feat in zip(phi_next_list, phi_flow_list)
+                        ]
+                else:
+                    c_prev = (1.0 - mix) * c_prev + mix * c_flow
+                    c_next = (1.0 - mix) * c_next + mix * c_flow
+                    if phi_prev_list is not None and phi_next_list is not None and phi_flow_list is not None:
+                        phi_prev_list = [
+                            None if prev_feat is None else (1.0 - mix) * prev_feat + mix * flow_feat
+                            for prev_feat, flow_feat in zip(phi_prev_list, phi_flow_list)
+                        ]
+                        phi_next_list = [
+                            None if next_feat is None else (1.0 - mix) * next_feat + mix * flow_feat
+                            for next_feat, flow_feat in zip(phi_next_list, phi_flow_list)
+                        ]
+                    c = torch.cat([c_prev, c_next], dim=1)
+            else:
+                c = torch.cat([c_prev, c_next], dim=1)
         else:
             c = self.cond_stage_model.encode(c)
         return c, phi_prev_list, phi_next_list
@@ -195,12 +225,17 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
 
     def configure_optimizers(self):
         params = [p for p in self.model.parameters() if p.requires_grad]
+        if self.flow_condition_fuser is not None:
+            params.extend(p for p in self.flow_condition_fuser.parameters() if p.requires_grad)
         if not params:
             raise RuntimeError("No trainable diffusion parameters found")
         if self.learn_logvar:
             params.append(self.logvar)
         opt = torch.optim.AdamW(params, lr=self.learning_rate)
-        print(f"Optimizer groups: diffusion lr={self.learning_rate:.2e}")
+        if self.flow_condition_fuser is not None:
+            print(f"Optimizer groups: diffusion+flow_fuser lr={self.learning_rate:.2e}")
+        else:
+            print(f"Optimizer groups: diffusion lr={self.learning_rate:.2e}")
         if self.use_scheduler:
             scheduler = instantiate_from_config(self.scheduler_config)
             scheduler = [{"scheduler": LambdaLR(opt, lr_lambda=scheduler.schedule), "interval": "step", "frequency": 1}]

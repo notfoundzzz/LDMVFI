@@ -231,3 +231,28 @@
 - 修复后的评测路径应与训练路径使用一致的 RVRT 输出归一化。
 - 新 checkpoint 中应同时包含 `pixel_lora_*` 与 `semantic_lora_*` 权重。
 - `run_cloud_check_rvrt_pisa_dual_lora.sh` 在不同 scale 设置下，应输出非零的 `mean_abs_diff` 或 `max_abs_diff`。
+# 2026/04/21
+
+## Flow 显式第三条件
+- 调整纯 `RVRT + LDMVFI + flow guidance` 主线的条件注入方式：新增 `flow_condition_mode=explicit`。
+- 新模式下不再把 `flow_prior` 弱平均到 `prev/next` 条件特征，而是先显式编码 `prev / flow / next` 三路条件。
+- 为了保持当前 `UNet in_channels=9` 不变，新增一个 1x1 条件融合层，将三路条件压回原有两路条件通道数。
+- 纯 flow 配置 `rvrt-flow-guided-stsr-x4.yaml` 默认切到 `explicit`，训练和 eval wrapper 也增加了 `FLOW_CONDITION_MODE` 入口。
+
+## 人工测试方式
+
+1. 使用纯 flow 配置启动训练：
+   `FLOW_CONDITION_MODE=explicit bash run_cloud_train_rvrt_flow_guided.sh`
+2. 观察启动日志：
+   预期打印 `mode=explicit`，并出现 `Optimizer groups: diffusion+flow_fuser ...`
+3. 使用 small eval 对比：
+   - no-flow baseline
+   - `RAFT + fused`
+   - `RAFT + explicit`
+4. 检查 summary JSON：
+   预期包含 `flow_condition_mode=explicit`
+
+## 预期结果
+
+- `flow_prior` 不再只是对原条件的弱扰动，而是成为更显式的第三路条件信息。
+- 在不修改主干 `UNet` 输入通道的前提下，增强模型对高质量光流先验的利用。
