@@ -223,16 +223,26 @@ def build_flow_guided_middle_prior(
 ):
     """@brief 构造光流引导的中间时刻先验帧。
 
-    @example 先在较低分辨率邻帧上估计光流，再上采样到目标尺度，
-    对 SR 邻帧做半步 warp，并平均得到 `flow-guided middle prior`。
+    @example 当 `backend=farneback` 时，先在较低分辨率邻帧上估计光流，
+    再上采样到目标尺度；当 `backend=raft` 时，直接在目标尺度邻帧上估计
+    光流，以避免低分辨率输入导致的数值不稳定，再对目标帧做半步 warp。
     """
-    flow_prev_to_next, flow_next_to_prev = _estimate_bidirectional_flow(
-        prev_flow_frame,
-        next_flow_frame,
-        backend=backend,
-        raft_variant=raft_variant,
-        raft_ckpt=raft_ckpt,
-    )
+    if backend == "raft":
+        flow_prev_to_next, flow_next_to_prev = _estimate_bidirectional_flow(
+            prev_target_frame,
+            next_target_frame,
+            backend=backend,
+            raft_variant=raft_variant,
+            raft_ckpt=raft_ckpt,
+        )
+    else:
+        flow_prev_to_next, flow_next_to_prev = _estimate_bidirectional_flow(
+            prev_flow_frame,
+            next_flow_frame,
+            backend=backend,
+            raft_variant=raft_variant,
+            raft_ckpt=raft_ckpt,
+        )
     flow_prev_to_next = _resize_flow(flow_prev_to_next.to(prev_target_frame.device), prev_target_frame.shape[-2:])
     flow_next_to_prev = _resize_flow(flow_next_to_prev.to(next_target_frame.device), next_target_frame.shape[-2:])
     warped_prev = _warp_with_half_flow(prev_target_frame, flow_prev_to_next)

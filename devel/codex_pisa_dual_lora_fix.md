@@ -1,5 +1,24 @@
 # 2026/04/21
 
+## RAFT 在 SR 邻帧上估流
+
+- 调整 `flow_guidance.py` 的正式先验构造逻辑：当 `flow_backend=raft` 时，直接在 `RVRT` 生成的 `prev_sr / next_sr` 上估计双向光流。
+- 保留 `Farneback` 的原始低分辨率估流路径不变，仅将 RAFT 专门切到 SR 尺度，原因是 LR 邻帧上存在数值不稳定风险。
+
+## 人工测试方式
+
+1. 先执行 smoke test，确认 `prev_sr / next_sr` 上的 RAFT 光流输出正常，且 `flow_prior.png` 可保存。
+2. 再执行正式 small eval，设置：
+   `FLOW_BACKEND=raft FLOW_RAFT_VARIANT=large FLOW_RAFT_CKPT=/abs/path/to/raft_large_C_T_SKHT_V2-ff5fadd5.pth`
+3. 观察日志不再出现 LR 输入下的 `NaN/Inf` 或 `flow_to_image` 索引异常。
+
+## 预期结果
+
+- RAFT 先验将基于 SR 邻帧构造，而不是低分辨率邻帧。
+- 若 RAFT 本身有效，新的 `flow_prior` 应比旧的 LR 估流版本更稳定、更接近中间时刻结构。
+
+# 2026/04/21
+
 ## RAFT 光流后端
 
 - 在 `flow_guidance.py` 中新增 `RAFT` 可选后端，保留 `Farneback` 作为回退选项。
