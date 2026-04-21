@@ -24,6 +24,12 @@ def restore_flow_guidance_metadata(ldm_config, ckpt_path):
         params.use_flow_guidance = bool(metadata["use_flow_guidance"])
     if "flow_guidance_strength" in metadata:
         params.flow_guidance_strength = float(metadata["flow_guidance_strength"])
+    if "flow_backend" in metadata:
+        params.flow_backend = metadata["flow_backend"]
+    if "flow_raft_variant" in metadata:
+        params.flow_raft_variant = metadata["flow_raft_variant"]
+    if "flow_raft_ckpt" in metadata:
+        params.flow_raft_ckpt = metadata["flow_raft_ckpt"]
 
 
 def infer_lora_rank_from_checkpoint(ckpt_path):
@@ -129,6 +135,9 @@ def main():
     parser.add_argument("--use_ema", dest="use_ema", action="store_true")
     parser.add_argument("--use_raw_weights", dest="use_ema", action="store_false")
     parser.add_argument("--allow_incomplete_ckpt", dest="strict_checkpoint", action="store_false")
+    parser.add_argument("--flow_backend", default=None)
+    parser.add_argument("--flow_raft_variant", default=None)
+    parser.add_argument("--flow_raft_ckpt", default=None)
     parser.set_defaults(use_ddim=True, use_ema=True, strict_checkpoint=True)
     args = parser.parse_args()
 
@@ -136,6 +145,12 @@ def main():
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     ldm_config = OmegaConf.load(args.ldm_config)
     restore_flow_guidance_metadata(ldm_config, args.ldm_ckpt)
+    if args.flow_backend:
+        ldm_config.model.params.flow_backend = args.flow_backend
+    if args.flow_raft_variant:
+        ldm_config.model.params.flow_raft_variant = args.flow_raft_variant
+    if args.flow_raft_ckpt:
+        ldm_config.model.params.flow_raft_ckpt = args.flow_raft_ckpt
     inferred_lora_rank = infer_lora_rank_from_checkpoint(args.ldm_ckpt)
     if inferred_lora_rank is not None:
         cfg_rank = ldm_config.model.params.get("lora_rank", None)
@@ -218,6 +233,9 @@ def main():
             "strict_checkpoint": args.strict_checkpoint,
             "use_flow_guidance": bool(ldm_config.model.params.get("use_flow_guidance", False)),
             "flow_guidance_strength": float(ldm_config.model.params.get("flow_guidance_strength", 0.0)),
+            "flow_backend": str(ldm_config.model.params.get("flow_backend", "farneback")),
+            "flow_raft_variant": str(ldm_config.model.params.get("flow_raft_variant", "large")),
+            "flow_raft_ckpt": ldm_config.model.params.get("flow_raft_ckpt", None),
             "save_images": args.save_images,
             "save_sr_images": args.save_sr_images,
             "save_max_samples": args.save_max_samples,

@@ -44,6 +44,9 @@ USE_RAW_WEIGHTS="${USE_RAW_WEIGHTS:-0}"
 USE_DDIM="${USE_DDIM:-1}"
 DDIM_ETA="${DDIM_ETA:-0}"
 SEED="${SEED:-1234}"
+FLOW_BACKEND="${FLOW_BACKEND:-}"
+FLOW_RAFT_VARIANT="${FLOW_RAFT_VARIANT:-}"
+FLOW_RAFT_CKPT="${FLOW_RAFT_CKPT:-}"
 
 if [[ -z "$LDM_CKPT" ]]; then
   echo "LDM_CKPT is required"
@@ -72,6 +75,9 @@ echo "use_ddim=$USE_DDIM"
 echo "ddim_eta=$DDIM_ETA"
 echo "seed=$SEED"
 echo "use_raw_weights=$USE_RAW_WEIGHTS"
+echo "flow_backend=${FLOW_BACKEND:-default}"
+echo "flow_raft_variant=${FLOW_RAFT_VARIANT:-default}"
+echo "flow_raft_ckpt=${FLOW_RAFT_CKPT:-default}"
 
 if [ -n "$GPU_ID" ]; then
   export CUDA_VISIBLE_DEVICES="$GPU_ID"
@@ -122,6 +128,15 @@ fi
 if [[ -n "$SEMANTIC_TARGET_SUFFIXES" ]]; then
   IFS=',' read -r -a SEM_TARGETS <<< "$SEMANTIC_TARGET_SUFFIXES"
   CMD+=(--semantic_target_suffixes "${SEM_TARGETS[@]}")
+fi
+if [[ -n "$FLOW_BACKEND" ]]; then
+  CMD+=(--flow_backend "$FLOW_BACKEND")
+fi
+if [[ -n "$FLOW_RAFT_VARIANT" ]]; then
+  CMD+=(--flow_raft_variant "$FLOW_RAFT_VARIANT")
+fi
+if [[ -n "$FLOW_RAFT_CKPT" ]]; then
+  CMD+=(--flow_raft_ckpt "$FLOW_RAFT_CKPT")
 fi
 if [[ -n "$SAMPLE_NAME" ]]; then
   CMD+=(--sample_name "$SAMPLE_NAME")

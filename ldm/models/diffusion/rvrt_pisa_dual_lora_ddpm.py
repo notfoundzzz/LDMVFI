@@ -53,6 +53,9 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
         cond_flow_key="flow_prior",
         use_flow_guidance=False,
         flow_guidance_strength=0.25,
+        flow_backend="farneback",
+        flow_raft_variant="large",
+        flow_raft_ckpt=None,
         *args,
         **kwargs,
     ):
@@ -71,6 +74,9 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
         self.semantic_lr_scale = float(semantic_lr_scale)
         self.use_flow_guidance = bool(use_flow_guidance)
         self.flow_guidance_strength = float(flow_guidance_strength)
+        self.flow_backend = str(flow_backend)
+        self.flow_raft_variant = str(flow_raft_variant)
+        self.flow_raft_ckpt = flow_raft_ckpt
         self._active_stage = None
         self.pixel_lora_groups = self._normalize_items(pixel_lora_groups, ("encoder", "decoder", "others"))
         self.semantic_lora_groups = self._normalize_items(semantic_lora_groups, ("decoder", "others"))
@@ -146,7 +152,10 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
         print(f"Semantic groups: {self.semantic_lora_groups}")
         print(f"Pixel target suffixes: {self.pixel_target_suffixes}")
         print(f"Semantic target suffixes: {self.semantic_target_suffixes}")
-        print(f"Flow guidance enabled: {self.use_flow_guidance}, strength={self.flow_guidance_strength:.3f}")
+        print(
+            f"Flow guidance enabled: {self.use_flow_guidance}, strength={self.flow_guidance_strength:.3f}, "
+            f"backend={self.flow_backend}, raft_variant={self.flow_raft_variant}"
+        )
 
         if self.use_ema:
             self.model_ema = LitEma(self.model)
@@ -167,6 +176,9 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
             "semantic_lr_scale": self.semantic_lr_scale,
             "use_flow_guidance": self.use_flow_guidance,
             "flow_guidance_strength": self.flow_guidance_strength,
+            "flow_backend": self.flow_backend,
+            "flow_raft_variant": self.flow_raft_variant,
+            "flow_raft_ckpt": self.flow_raft_ckpt,
         }
 
     def on_fit_start(self):
@@ -309,7 +321,15 @@ class LatentDiffusionVFIRVRTPiSADualLoRA(LatentDiffusionVFI):
         return prev_sr, next_sr
 
     def _build_flow_guided_prior(self, prev_lr, next_lr, prev_target, next_target):
-        return build_flow_guided_middle_prior(prev_lr, next_lr, prev_target, next_target)
+        return build_flow_guided_middle_prior(
+            prev_lr,
+            next_lr,
+            prev_target,
+            next_target,
+            backend=self.flow_backend,
+            raft_variant=self.flow_raft_variant,
+            raft_ckpt=self.flow_raft_ckpt,
+        )
 
     def get_learned_conditioning(self, c):
         phi_prev_list, phi_next_list = None, None

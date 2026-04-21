@@ -1,9 +1,13 @@
+import os
+
 import torch
 import torch.nn.functional as F
 
+_RAFT_MODEL_CACHE = {}
+
 
 def _to_gray_uint8(frame: torch.Tensor):
-    """@brief 将单帧张量转为 Farneback 所需的灰度 `uint8` 图像.
+    """@brief 将单帧张量转为 Farneback 所需的灰度 `uint8` 图像。
 
     @example 输入 `[-1,1]` 范围的 `3xH xW` 张量，输出 `H x W`
     的 `uint8` 灰度图。
@@ -16,11 +20,77 @@ def _to_gray_uint8(frame: torch.Tensor):
     return (gray.numpy() * 255.0).round().astype("uint8")
 
 
-def _estimate_bidirectional_flow_farneback(prev_batch: torch.Tensor, next_batch: torch.Tensor):
-    """@brief 使用 OpenCV Farneback 估计双向稠密光流.
+def _normalize_raft_frames(frame_batch: torch.Tensor):
+    """@brief 将输入帧转换为 RAFT 更常见的 `[-1,1]` 浮点输入格式。"""
+    if frame_batch.min().item() < -0.5:
+        return frame_batch.clamp(-1.0, 1.0)
+    return (frame_batch * 2.0 - 1.0).clamp(-1.0, 1.0)
 
-    @example 对一批 LR 邻帧估计 `prev->next` 和 `next->prev` 光流，
-    后续再上采样到 SR 尺度以生成中间时刻先验。
+
+def _pad_to_multiple_of_8(frame_batch: torch.Tensor):
+    """@brief 将输入 padding 到 8 的倍数，满足 RAFT 下采样约束。"""
+    _, _, h, w = frame_batch.shape
+    pad_h = (8 - h % 8) % 8
+    pad_w = (8 - w % 8) % 8
+    if pad_h == 0 and pad_w == 0:
+        return frame_batch, (0, 0)
+    padded = F.pad(frame_batch, (0, pad_w, 0, pad_h), mode="replicate")
+    return padded, (pad_h, pad_w)
+
+
+def _crop_flow(flow: torch.Tensor, pad_hw):
+    pad_h, pad_w = pad_hw
+    if pad_h > 0:
+        flow = flow[:, :, :-pad_h, :]
+    if pad_w > 0:
+        flow = flow[:, :, :, :-pad_w]
+    return flow
+
+
+def _build_raft_model(variant: str, ckpt_path: str, device: torch.device):
+    cache_key = (variant, os.path.abspath(ckpt_path), str(device))
+    if cache_key in _RAFT_MODEL_CACHE:
+        return _RAFT_MODEL_CACHE[cache_key]
+
+    try:
+        from torchvision.models.optical_flow import raft_large, raft_small
+    except ImportError as exc:
+        raise ImportError("RAFT backend requires torchvision.models.optical_flow") from exc
+
+    if not ckpt_path:
+        raise ValueError("RAFT backend requires a local flow_raft_ckpt path")
+    if not os.path.isfile(ckpt_path):
+        raise FileNotFoundError(f"RAFT checkpoint not found: {ckpt_path}")
+
+    if variant == "small":
+        model = raft_small(weights=None, progress=False)
+    elif variant == "large":
+        model = raft_large(weights=None, progress=False)
+    else:
+        raise ValueError(f"Unsupported RAFT variant: {variant}")
+
+    state = torch.load(ckpt_path, map_location="cpu")
+    state_dict = state.get("state_dict", state)
+    if any(key.startswith("module.") for key in state_dict.keys()):
+        state_dict = {key.removeprefix("module."): value for key, value in state_dict.items()}
+    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    if unexpected:
+        raise ValueError(f"Unexpected RAFT checkpoint keys: {unexpected[:10]}")
+    if missing:
+        raise ValueError(f"Missing RAFT checkpoint keys: {missing[:10]}")
+
+    model = model.to(device).eval()
+    for param in model.parameters():
+        param.requires_grad = False
+    _RAFT_MODEL_CACHE[cache_key] = model
+    return model
+
+
+def _estimate_bidirectional_flow_farneback(prev_batch: torch.Tensor, next_batch: torch.Tensor):
+    """@brief 使用 OpenCV Farneback 估计双向稠密光流。
+
+    @example 对一对 LR 邻帧估计 `prev->next` 和 `next->prev` 光流，
+    后续再上采样到目标尺度以生成中间时刻先验。
     """
     try:
         import cv2
@@ -39,6 +109,53 @@ def _estimate_bidirectional_flow_farneback(prev_batch: torch.Tensor, next_batch:
     return torch.stack(flow_prev_to_next, dim=0), torch.stack(flow_next_to_prev, dim=0)
 
 
+@torch.no_grad()
+def _estimate_bidirectional_flow_raft(
+    prev_batch: torch.Tensor,
+    next_batch: torch.Tensor,
+    variant: str,
+    ckpt_path: str,
+):
+    """@brief 使用本地 RAFT 权重估计双向稠密光流。
+
+    @example 指定 `variant=large` 且传入本地 `raft-large.pth` 后，
+    可得到比 Farneback 更强的 `prev->next` / `next->prev` 光流先验。
+    """
+    device = prev_batch.device
+    model = _build_raft_model(variant=variant, ckpt_path=ckpt_path, device=device)
+
+    prev_batch = _normalize_raft_frames(prev_batch)
+    next_batch = _normalize_raft_frames(next_batch)
+    prev_batch, pad_hw = _pad_to_multiple_of_8(prev_batch)
+    next_batch, _ = _pad_to_multiple_of_8(next_batch)
+
+    flow_prev_to_next = model(prev_batch, next_batch)[-1]
+    flow_next_to_prev = model(next_batch, prev_batch)[-1]
+    flow_prev_to_next = _crop_flow(flow_prev_to_next, pad_hw)
+    flow_next_to_prev = _crop_flow(flow_next_to_prev, pad_hw)
+    return flow_prev_to_next.float(), flow_next_to_prev.float()
+
+
+def _estimate_bidirectional_flow(
+    prev_batch: torch.Tensor,
+    next_batch: torch.Tensor,
+    backend: str,
+    raft_variant: str = "large",
+    raft_ckpt: str = None,
+):
+    """@brief 根据配置选择 Farneback 或 RAFT 作为光流后端。"""
+    if backend == "farneback":
+        return _estimate_bidirectional_flow_farneback(prev_batch, next_batch)
+    if backend == "raft":
+        return _estimate_bidirectional_flow_raft(
+            prev_batch.to(dtype=torch.float32),
+            next_batch.to(dtype=torch.float32),
+            variant=raft_variant,
+            ckpt_path=raft_ckpt,
+        )
+    raise ValueError(f"Unsupported flow backend: {backend}")
+
+
 def _resize_flow(flow: torch.Tensor, target_hw):
     target_h, target_w = target_hw
     src_h, src_w = flow.shape[-2:]
@@ -53,7 +170,7 @@ def _resize_flow(flow: torch.Tensor, target_hw):
 
 
 def _warp_with_half_flow(frame: torch.Tensor, flow: torch.Tensor):
-    """@brief 将帧按半步光流 backward warp 到中间时刻.
+    """@brief 将帧按半步光流 backward warp 到中间时刻。
 
     @example 对 `prev->next` 光流取 `0.5` 倍，可近似生成 `t=0.5`
     时刻对应的对齐结果。
@@ -80,13 +197,22 @@ def build_flow_guided_middle_prior(
     next_flow_frame: torch.Tensor,
     prev_target_frame: torch.Tensor,
     next_target_frame: torch.Tensor,
+    backend: str = "farneback",
+    raft_variant: str = "large",
+    raft_ckpt: str = None,
 ):
-    """@brief 构造光流引导的中间时刻先验帧.
+    """@brief 构造光流引导的中间时刻先验帧。
 
-    @example 先在较低分辨率邻帧上估计光流，再将其上采样到目标帧
-    分辨率，对 SR 邻帧做半步 warp，并平均得到 `flow-guided middle prior`。
+    @example 先在较低分辨率邻帧上估计光流，再上采样到目标尺度，
+    对 SR 邻帧做半步 warp，并平均得到 `flow-guided middle prior`。
     """
-    flow_prev_to_next, flow_next_to_prev = _estimate_bidirectional_flow_farneback(prev_flow_frame, next_flow_frame)
+    flow_prev_to_next, flow_next_to_prev = _estimate_bidirectional_flow(
+        prev_flow_frame,
+        next_flow_frame,
+        backend=backend,
+        raft_variant=raft_variant,
+        raft_ckpt=raft_ckpt,
+    )
     flow_prev_to_next = _resize_flow(flow_prev_to_next.to(prev_target_frame.device), prev_target_frame.shape[-2:])
     flow_next_to_prev = _resize_flow(flow_next_to_prev.to(next_target_frame.device), next_target_frame.shape[-2:])
     warped_prev = _warp_with_half_flow(prev_target_frame, flow_prev_to_next)

@@ -35,6 +35,9 @@ SAVE_TRAIN_IMAGES="${SAVE_TRAIN_IMAGES:-0}"
 MODEL_BASE_LR="${MODEL_BASE_LR:-}"
 USE_FLOW_GUIDANCE="${USE_FLOW_GUIDANCE:-1}"
 FLOW_GUIDANCE_STRENGTH="${FLOW_GUIDANCE_STRENGTH:-0.25}"
+FLOW_BACKEND="${FLOW_BACKEND:-}"
+FLOW_RAFT_VARIANT="${FLOW_RAFT_VARIANT:-}"
+FLOW_RAFT_CKPT="${FLOW_RAFT_CKPT:-}"
 
 if [[ -z "$VQ_CKPT" || ! -f "$VQ_CKPT" ]]; then
   echo "VQ_CKPT is required"
@@ -69,6 +72,9 @@ echo "save_train_images=$SAVE_TRAIN_IMAGES"
 echo "model_base_lr=${MODEL_BASE_LR:-default}"
 echo "use_flow_guidance=$USE_FLOW_GUIDANCE"
 echo "flow_guidance_strength=$FLOW_GUIDANCE_STRENGTH"
+echo "flow_backend=${FLOW_BACKEND:-default}"
+echo "flow_raft_variant=${FLOW_RAFT_VARIANT:-default}"
+echo "flow_raft_ckpt=${FLOW_RAFT_CKPT:-default}"
 
 TRAINER_DOTLIST=()
 if [[ -n "$MAX_EPOCHS" ]]; then
@@ -90,20 +96,34 @@ if [[ "$SAVE_TRAIN_IMAGES" == "0" || "$SAVE_TRAIN_IMAGES" == "false" ]]; then
   IMAGE_LOGGER_DOTLIST+=("lightning.callbacks.image_logger.params.max_images=0")
 fi
 
-"$PYTHON_BIN" -u main.py \
-  --base "$CONFIG_PATH" \
-  -t \
-  --no-test \
-  --gpus "$GPU_IDS" \
-  --logdir "$LOGDIR" \
-  data.params.batch_size="$BATCH_SIZE" \
-  data.params.num_workers="$NUM_WORKERS" \
-  lightning.trainer.accumulate_grad_batches="$ACCUM" \
-  "${TRAINER_DOTLIST[@]}" \
-  "${IMAGE_LOGGER_DOTLIST[@]}" \
-  model.params.first_stage_config.params.ckpt_path="$VQ_CKPT" \
-  model.params.ckpt_path="$BASE_LDM_CKPT" \
-  model.params.rvrt_root="$RVRT_ROOT" \
-  model.params.rvrt_ckpt="$RVRT_CKPT" \
-  model.params.use_flow_guidance="$USE_FLOW_GUIDANCE" \
+CMD=(
+  "$PYTHON_BIN" -u main.py
+  --base "$CONFIG_PATH"
+  -t
+  --no-test
+  --gpus "$GPU_IDS"
+  --logdir "$LOGDIR"
+  data.params.batch_size="$BATCH_SIZE"
+  data.params.num_workers="$NUM_WORKERS"
+  lightning.trainer.accumulate_grad_batches="$ACCUM"
+  "${TRAINER_DOTLIST[@]}"
+  "${IMAGE_LOGGER_DOTLIST[@]}"
+  model.params.first_stage_config.params.ckpt_path="$VQ_CKPT"
+  model.params.ckpt_path="$BASE_LDM_CKPT"
+  model.params.rvrt_root="$RVRT_ROOT"
+  model.params.rvrt_ckpt="$RVRT_CKPT"
+  model.params.use_flow_guidance="$USE_FLOW_GUIDANCE"
   model.params.flow_guidance_strength="$FLOW_GUIDANCE_STRENGTH"
+)
+
+if [[ -n "$FLOW_BACKEND" ]]; then
+  CMD+=(model.params.flow_backend="$FLOW_BACKEND")
+fi
+if [[ -n "$FLOW_RAFT_VARIANT" ]]; then
+  CMD+=(model.params.flow_raft_variant="$FLOW_RAFT_VARIANT")
+fi
+if [[ -n "$FLOW_RAFT_CKPT" ]]; then
+  CMD+=(model.params.flow_raft_ckpt="$FLOW_RAFT_CKPT")
+fi
+
+"${CMD[@]}"

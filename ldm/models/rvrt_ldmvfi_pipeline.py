@@ -129,7 +129,15 @@ class RVRTLDMVFIPipeline:
         with scope:
             xc = {"prev_frame": prev_sr, "next_frame": next_sr}
             if getattr(self.model, "use_flow_guidance", False):
-                self.last_flow_prior = build_flow_guided_middle_prior(prev_lr, next_lr, prev_sr, next_sr)
+                self.last_flow_prior = build_flow_guided_middle_prior(
+                    prev_lr,
+                    next_lr,
+                    prev_sr,
+                    next_sr,
+                    backend=getattr(self.model, "flow_backend", "farneback"),
+                    raft_variant=getattr(self.model, "flow_raft_variant", "large"),
+                    raft_ckpt=getattr(self.model, "flow_raft_ckpt", None),
+                )
                 xc[getattr(self.model, "cond_flow_key", "flow_prior")] = self.last_flow_prior
             else:
                 self.last_flow_prior = None

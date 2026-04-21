@@ -46,6 +46,9 @@ DDIM_ETA="${DDIM_ETA:-0}"
 SEED="${SEED:-1234}"
 USE_RAW_WEIGHTS="${USE_RAW_WEIGHTS:-0}"
 ALLOW_INCOMPLETE_CKPT="${ALLOW_INCOMPLETE_CKPT:-0}"
+FLOW_BACKEND="${FLOW_BACKEND:-}"
+FLOW_RAFT_VARIANT="${FLOW_RAFT_VARIANT:-}"
+FLOW_RAFT_CKPT="${FLOW_RAFT_CKPT:-}"
 
 if [[ "$LDM_CONFIG" == "$DEFAULT_BASE_CONFIG" ]] && [[ "$LDM_CKPT" == *"rvrt-lora"* ]]; then
   LDM_CONFIG="$DEFAULT_LORA_CONFIG"
@@ -83,6 +86,9 @@ echo "ddim_eta=$DDIM_ETA"
 echo "seed=$SEED"
 echo "use_raw_weights=$USE_RAW_WEIGHTS"
 echo "allow_incomplete_ckpt=$ALLOW_INCOMPLETE_CKPT"
+echo "flow_backend=${FLOW_BACKEND:-default}"
+echo "flow_raft_variant=${FLOW_RAFT_VARIANT:-default}"
+echo "flow_raft_ckpt=${FLOW_RAFT_CKPT:-default}"
 
 if [[ "$LDM_CONFIG" == "$DEFAULT_BASE_CONFIG" ]] && [[ "$LDM_CKPT" == *"rvrt-lora"* ]]; then
   echo "Refusing to evaluate a LoRA checkpoint with the base LDMVFI config."
@@ -162,6 +168,15 @@ for SPLIT_NAME in "${SPLIT_ARRAY[@]}"; do
 
   if [[ "$ALLOW_INCOMPLETE_CKPT" == "1" || "$ALLOW_INCOMPLETE_CKPT" == "true" ]]; then
     CMD+=(--allow_incomplete_ckpt)
+  fi
+  if [[ -n "$FLOW_BACKEND" ]]; then
+    CMD+=(--flow_backend "$FLOW_BACKEND")
+  fi
+  if [[ -n "$FLOW_RAFT_VARIANT" ]]; then
+    CMD+=(--flow_raft_variant "$FLOW_RAFT_VARIANT")
+  fi
+  if [[ -n "$FLOW_RAFT_CKPT" ]]; then
+    CMD+=(--flow_raft_ckpt "$FLOW_RAFT_CKPT")
   fi
 
   "${CMD[@]}"

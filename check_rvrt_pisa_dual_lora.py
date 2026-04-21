@@ -43,6 +43,9 @@ def prepare_config(
     semantic_groups=None,
     pixel_target_suffixes=None,
     semantic_target_suffixes=None,
+    flow_backend=None,
+    flow_raft_variant=None,
+    flow_raft_ckpt=None,
 ):
     ldm_config = OmegaConf.load(ldm_config_path)
     pixel_rank, semantic_rank = infer_dual_lora_ranks(ldm_ckpt)
@@ -69,6 +72,12 @@ def prepare_config(
         ldm_config.model.params.use_flow_guidance = metadata["use_flow_guidance"]
     if "flow_guidance_strength" in metadata:
         ldm_config.model.params.flow_guidance_strength = metadata["flow_guidance_strength"]
+    if "flow_backend" in metadata:
+        ldm_config.model.params.flow_backend = metadata["flow_backend"]
+    if "flow_raft_variant" in metadata:
+        ldm_config.model.params.flow_raft_variant = metadata["flow_raft_variant"]
+    if "flow_raft_ckpt" in metadata:
+        ldm_config.model.params.flow_raft_ckpt = metadata["flow_raft_ckpt"]
     if pixel_groups:
         ldm_config.model.params.pixel_lora_groups = list(pixel_groups)
     if semantic_groups:
@@ -77,6 +86,12 @@ def prepare_config(
         ldm_config.model.params.pixel_target_suffixes = list(pixel_target_suffixes)
     if semantic_target_suffixes:
         ldm_config.model.params.semantic_target_suffixes = list(semantic_target_suffixes)
+    if flow_backend:
+        ldm_config.model.params.flow_backend = flow_backend
+    if flow_raft_variant:
+        ldm_config.model.params.flow_raft_variant = flow_raft_variant
+    if flow_raft_ckpt:
+        ldm_config.model.params.flow_raft_ckpt = flow_raft_ckpt
     return ldm_config
 
 
@@ -106,6 +121,9 @@ def compare_outputs(args):
         semantic_groups=args.semantic_lora_groups,
         pixel_target_suffixes=args.pixel_target_suffixes,
         semantic_target_suffixes=args.semantic_target_suffixes,
+        flow_backend=args.flow_backend,
+        flow_raft_variant=args.flow_raft_variant,
+        flow_raft_ckpt=args.flow_raft_ckpt,
     )
 
     pipeline_a = RVRTPiSADualLoRAPipeline(
@@ -208,6 +226,9 @@ def main():
     parser.add_argument("--use_raw_weights", action="store_true")
     parser.add_argument("--save_dir", default=None)
     parser.add_argument("--summary_json", default=None)
+    parser.add_argument("--flow_backend", default=None)
+    parser.add_argument("--flow_raft_variant", default=None)
+    parser.add_argument("--flow_raft_ckpt", default=None)
     parser.set_defaults(use_ddim=True)
     args = parser.parse_args()
 

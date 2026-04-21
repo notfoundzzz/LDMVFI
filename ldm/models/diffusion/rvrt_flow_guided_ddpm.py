@@ -28,6 +28,9 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         cond_flow_key="flow_prior",
         use_flow_guidance=True,
         flow_guidance_strength=0.25,
+        flow_backend="farneback",
+        flow_raft_variant="large",
+        flow_raft_ckpt=None,
         *args,
         **kwargs,
     ):
@@ -39,6 +42,9 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         self.cond_flow_key = cond_flow_key
         self.use_flow_guidance = bool(use_flow_guidance)
         self.flow_guidance_strength = float(flow_guidance_strength)
+        self.flow_backend = str(flow_backend)
+        self.flow_raft_variant = str(flow_raft_variant)
+        self.flow_raft_ckpt = flow_raft_ckpt
 
         self.rvrt_frontend = build_sr_frontend(
             sr_mode="rvrt",
@@ -64,13 +70,19 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         print(f"Full-tuning diffusion UNet with {trainable} trainable parameters")
         print("RVRT frontend frozen")
         print("First-stage and cond-stage frozen")
-        print(f"Flow guidance enabled: {self.use_flow_guidance}, strength={self.flow_guidance_strength:.3f}")
+        print(
+            f"Flow guidance enabled: {self.use_flow_guidance}, strength={self.flow_guidance_strength:.3f}, "
+            f"backend={self.flow_backend}, raft_variant={self.flow_raft_variant}"
+        )
 
     def on_save_checkpoint(self, checkpoint):
         super().on_save_checkpoint(checkpoint)
         checkpoint["rvrt_flow_guidance_metadata"] = {
             "use_flow_guidance": self.use_flow_guidance,
             "flow_guidance_strength": self.flow_guidance_strength,
+            "flow_backend": self.flow_backend,
+            "flow_raft_variant": self.flow_raft_variant,
+            "flow_raft_ckpt": self.flow_raft_ckpt,
         }
 
     def on_fit_start(self):
@@ -100,7 +112,15 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
 
     def _build_flow_guided_prior(self, prev_lr, next_lr, prev_target, next_target):
         """@brief 基于 LR 邻帧估计光流，并在 SR 条件帧上构造中间时刻先验。"""
-        return build_flow_guided_middle_prior(prev_lr, next_lr, prev_target, next_target)
+        return build_flow_guided_middle_prior(
+            prev_lr,
+            next_lr,
+            prev_target,
+            next_target,
+            backend=self.flow_backend,
+            raft_variant=self.flow_raft_variant,
+            raft_ckpt=self.flow_raft_ckpt,
+        )
 
     def get_learned_conditioning(self, c):
         """@brief 将光流先验编码后融合进前后邻帧条件特征。

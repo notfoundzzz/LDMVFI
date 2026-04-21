@@ -19,6 +19,9 @@ model:
     rvrt_ckpt: /data/Shenzhen/zhahongli/RVRT/model_zoo/rvrt/002_RVRT_videosr_bi_Vimeo_14frames.pth
     use_flow_guidance: True
     flow_guidance_strength: 0.25
+    flow_backend: farneback
+    flow_raft_variant: large
+    flow_raft_ckpt: null
     unet_config:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel
       params:

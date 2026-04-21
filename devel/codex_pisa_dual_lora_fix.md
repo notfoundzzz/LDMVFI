@@ -1,3 +1,25 @@
+# 2026/04/21
+
+## RAFT 光流后端
+
+- 在 `flow_guidance.py` 中新增 `RAFT` 可选后端，保留 `Farneback` 作为回退选项。
+- RAFT 通过 `flow_backend=raft`、`flow_raft_variant`、`flow_raft_ckpt` 控制，并要求使用本地权重路径，避免训练脚本触发下载。
+- 纯 flow 版和 PiSA flow 版的训练类、pipeline、eval、check 均已接入这组 metadata，保证训练与评测链路一致。
+
+## 人工测试方式
+
+1. 准备本地 RAFT 权重，例如 `raft-large.pth`。
+2. 训练时传入：
+   `FLOW_BACKEND=raft FLOW_RAFT_VARIANT=large FLOW_RAFT_CKPT=/abs/path/to/raft-large.pth`
+3. 观察日志打印：
+   `backend=raft, raft_variant=large`
+4. 训练完成后跑 small eval，确认 summary 中记录了 `flow_backend=raft`。
+
+## 预期结果
+
+- 光流先验将由更强的 RAFT 替代 Farneback 生成。
+- 若 RAFT 权重路径错误，训练/评测会在光流先验构造阶段直接报错，而不是静默回退。
+
 # 2026/04/20
 
 ## 纯光流引导版本

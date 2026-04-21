@@ -127,6 +127,9 @@ def main():
     parser.add_argument("--save_images", action="store_true")
     parser.add_argument("--save_sr_images", action="store_true")
     parser.add_argument("--save_max_samples", type=int, default=0)
+    parser.add_argument("--flow_backend", default=None)
+    parser.add_argument("--flow_raft_variant", default=None)
+    parser.add_argument("--flow_raft_ckpt", default=None)
     parser.set_defaults(use_ddim=True, strict_checkpoint=True)
     args = parser.parse_args()
 
@@ -157,6 +160,12 @@ def main():
         ldm_config.model.params.use_flow_guidance = metadata["use_flow_guidance"]
     if "flow_guidance_strength" in metadata:
         ldm_config.model.params.flow_guidance_strength = metadata["flow_guidance_strength"]
+    if "flow_backend" in metadata:
+        ldm_config.model.params.flow_backend = metadata["flow_backend"]
+    if "flow_raft_variant" in metadata:
+        ldm_config.model.params.flow_raft_variant = metadata["flow_raft_variant"]
+    if "flow_raft_ckpt" in metadata:
+        ldm_config.model.params.flow_raft_ckpt = metadata["flow_raft_ckpt"]
     if args.pixel_lora_groups:
         ldm_config.model.params.pixel_lora_groups = list(args.pixel_lora_groups)
     if args.semantic_lora_groups:
@@ -165,6 +174,12 @@ def main():
         ldm_config.model.params.pixel_target_suffixes = list(args.pixel_target_suffixes)
     if args.semantic_target_suffixes:
         ldm_config.model.params.semantic_target_suffixes = list(args.semantic_target_suffixes)
+    if args.flow_backend:
+        ldm_config.model.params.flow_backend = args.flow_backend
+    if args.flow_raft_variant:
+        ldm_config.model.params.flow_raft_variant = args.flow_raft_variant
+    if args.flow_raft_ckpt:
+        ldm_config.model.params.flow_raft_ckpt = args.flow_raft_ckpt
 
     pipeline = RVRTPiSADualLoRAPipeline(
         ldm_config=ldm_config,
@@ -236,6 +251,11 @@ def main():
             "seed": args.seed,
             "use_ema": not args.use_raw_weights,
             "strict_checkpoint": args.strict_checkpoint,
+            "use_flow_guidance": ldm_config.model.params.get("use_flow_guidance", None),
+            "flow_guidance_strength": ldm_config.model.params.get("flow_guidance_strength", None),
+            "flow_backend": ldm_config.model.params.get("flow_backend", "farneback"),
+            "flow_raft_variant": ldm_config.model.params.get("flow_raft_variant", "large"),
+            "flow_raft_ckpt": ldm_config.model.params.get("flow_raft_ckpt", None),
         }
         with open(args.summary_json, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, ensure_ascii=True)
