@@ -44,6 +44,7 @@ SAVE_MAX_SAMPLES="${SAVE_MAX_SAMPLES:-0}"
 USE_DDIM="${USE_DDIM:-1}"
 DDIM_ETA="${DDIM_ETA:-0}"
 SEED="${SEED:-1234}"
+METRICS="${METRICS:-PSNR,SSIM}"
 USE_RAW_WEIGHTS="${USE_RAW_WEIGHTS:-0}"
 ALLOW_INCOMPLETE_CKPT="${ALLOW_INCOMPLETE_CKPT:-0}"
 FLOW_BACKEND="${FLOW_BACKEND:-}"
@@ -85,6 +86,7 @@ echo "save_max_samples=$SAVE_MAX_SAMPLES"
 echo "use_ddim=$USE_DDIM"
 echo "ddim_eta=$DDIM_ETA"
 echo "seed=$SEED"
+echo "metrics=$METRICS"
 echo "use_raw_weights=$USE_RAW_WEIGHTS"
 echo "allow_incomplete_ckpt=$ALLOW_INCOMPLETE_CKPT"
 echo "flow_condition_mode=${FLOW_CONDITION_MODE:-default}"
@@ -146,6 +148,13 @@ for SPLIT_NAME in "${SPLIT_ARRAY[@]}"; do
     CMD+=(--use_ddim)
   else
     CMD+=(--use_ddpm)
+  fi
+
+  if [[ -n "$METRICS" ]]; then
+    IFS=',' read -r -a METRIC_ARRAY <<< "$METRICS"
+    if [[ "${#METRIC_ARRAY[@]}" -gt 0 ]]; then
+      CMD+=(--metrics "${METRIC_ARRAY[@]}")
+    fi
   fi
 
   if [ -n "$CURRENT_LIST_FILE" ] && [ -f "$CURRENT_LIST_FILE" ]; then

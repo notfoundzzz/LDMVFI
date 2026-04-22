@@ -49,6 +49,7 @@ USE_RAW_WEIGHTS="${USE_RAW_WEIGHTS:-0}"
 USE_DDIM="${USE_DDIM:-1}"
 DDIM_ETA="${DDIM_ETA:-0}"
 SEED="${SEED:-1234}"
+METRICS="${METRICS:-PSNR,SSIM}"
 ALLOW_INCOMPLETE_CKPT="${ALLOW_INCOMPLETE_CKPT:-0}"
 USE_FLOW_GUIDANCE="${USE_FLOW_GUIDANCE:-}"
 FLOW_GUIDANCE_STRENGTH="${FLOW_GUIDANCE_STRENGTH:-}"
@@ -84,6 +85,7 @@ echo "use_raw_weights=$USE_RAW_WEIGHTS"
 echo "use_ddim=$USE_DDIM"
 echo "ddim_eta=$DDIM_ETA"
 echo "seed=$SEED"
+echo "metrics=$METRICS"
 echo "allow_incomplete_ckpt=$ALLOW_INCOMPLETE_CKPT"
 echo "use_flow_guidance=${USE_FLOW_GUIDANCE:-default}"
 echo "flow_guidance_strength=${FLOW_GUIDANCE_STRENGTH:-default}"
@@ -137,6 +139,13 @@ for SPLIT_NAME in "${SPLIT_ARRAY[@]}"; do
     CMD+=(--use_ddim)
   else
     CMD+=(--use_ddpm)
+  fi
+
+  if [[ -n "$METRICS" ]]; then
+    IFS=',' read -r -a METRIC_ARRAY <<< "$METRICS"
+    if [[ "${#METRIC_ARRAY[@]}" -gt 0 ]]; then
+      CMD+=(--metrics "${METRIC_ARRAY[@]}")
+    fi
   fi
 
   if [[ -n "$PIXEL_LORA_GROUPS" ]]; then
