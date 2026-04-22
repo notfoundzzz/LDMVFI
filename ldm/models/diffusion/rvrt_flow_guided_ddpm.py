@@ -2,18 +2,13 @@ import torch
 from torch.optim.lr_scheduler import LambdaLR
 
 from ldm.models.diffusion.ddpm import LatentDiffusionVFI
-from ldm.models.flow_guidance import build_flow_guided_middle_prior
+from ldm.models.flow_guidance import build_flow_aligned_input_pair, build_flow_guided_middle_prior
 from ldm.models.rvrt_frontend import build_sr_frontend
 from ldm.util import instantiate_from_config
 
 
 class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
-    """@brief 纯光流引导的 RVRT + LDMVFI 训练类。
-
-    @example
-    输入前后 LR 邻帧后，先由 RVRT 生成 SR 条件帧，再构造 `flow-guided middle prior`，
-    最后将该先验注入条件编码路径，用于训练 diffusion UNet。
-    """
+    """纯光流引导训练类。"""
 
     def __init__(
         self,
@@ -51,8 +46,6 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         self.cond_latent_channels = int(getattr(self.cond_stage_model, "embed_dim", self.channels))
         self.flow_condition_fuser = None
         if self.use_flow_guidance and self.flow_condition_mode == "explicit":
-            # @brief 显式第三条件模式下，先分别编码 prev / flow / next 三路条件。
-            # @example 再使用 1x1 融合层压回现有两路条件通道数，避免修改 UNet in_channels。
             self.flow_condition_fuser = torch.nn.Conv2d(
                 self.cond_latent_channels * 3,
                 self.cond_latent_channels * 2,
@@ -105,11 +98,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
 
     @torch.no_grad()
     def _super_resolve_neighbors(self, batch, bs=None):
-        """@brief 使用冻结的 RVRT 将 LR 邻帧提升为 SR 条件帧。
-
-        @example
-        `prev_frame_lr / next_frame_lr -> prev_sr / next_sr`
-        """
+        """LR 邻帧先做 SR。"""
         prev_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_prev_key).to(self.device)
         next_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_next_key).to(self.device)
         if bs is not None:
@@ -125,7 +114,6 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         return prev_sr, next_sr
 
     def _build_flow_guided_prior(self, prev_lr, next_lr, prev_target, next_target):
-        """@brief 构造光流引导的中间时刻先验帧。"""
         return build_flow_guided_middle_prior(
             prev_lr,
             next_lr,
@@ -137,13 +125,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         )
 
     def get_learned_conditioning(self, c):
-        """@brief 编码并融合前帧、光流先验、后帧条件。
-
-        @example
-        - `fused`：沿用旧逻辑，将 `flow_prior` 弱融合到 `prev/next` 条件中。
-        - `explicit`：显式编码 `prev / flow / next` 三路条件，再通过 1x1 融合层压回
-          当前两路条件通道数。
-        """
+        """编码条件。"""
         phi_prev_list, phi_next_list = None, None
         if isinstance(c, dict) and self.cond_prev_key in c.keys():
             c_prev, phi_prev_list = self.cond_stage_model.encode(c[self.cond_prev_key], ret_feature=True)
@@ -209,7 +191,20 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             if bs is not None:
                 prev_lr = prev_lr[:bs]
                 next_lr = next_lr[:bs]
-            xc[self.cond_flow_key] = self._build_flow_guided_prior(prev_lr, next_lr, prev_sr, next_sr)
+            if self.flow_condition_mode == "aligned_input":
+                aligned_prev, aligned_next = build_flow_aligned_input_pair(
+                    prev_lr,
+                    next_lr,
+                    prev_sr,
+                    next_sr,
+                    backend=self.flow_backend,
+                    raft_variant=self.flow_raft_variant,
+                    raft_ckpt=self.flow_raft_ckpt,
+                )
+                xc[self.cond_prev_key] = aligned_prev
+                xc[self.cond_next_key] = aligned_next
+            else:
+                xc[self.cond_flow_key] = self._build_flow_guided_prior(prev_lr, next_lr, prev_sr, next_sr)
         c, phi_prev_list, phi_next_list = self.get_learned_conditioning(xc)
 
         out = [z, c]

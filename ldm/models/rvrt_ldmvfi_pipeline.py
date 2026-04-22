@@ -3,17 +3,13 @@ from contextlib import nullcontext
 import torch
 
 from ldm.models.diffusion.ddim import DDIMSampler
-from ldm.models.flow_guidance import build_flow_guided_middle_prior
+from ldm.models.flow_guidance import build_flow_aligned_input_pair, build_flow_guided_middle_prior
 from ldm.models.rvrt_frontend import build_sr_frontend
 from ldm.util import instantiate_from_config
 
 
 class RVRTLDMVFIPipeline:
-    """@brief Evaluate the stitched RVRT + LDMVFI pipeline safely.
-
-    @example Set `use_ema=False` to compare the raw finetuned weights with the
-    EMA-smoothed weights from the same checkpoint.
-    """
+    """安全评测 stitched RVRT + LDMVFI 流水线。"""
 
     def __init__(
         self,
@@ -118,7 +114,6 @@ class RVRTLDMVFIPipeline:
         prev_lr = prev_lr.to(self.device)
         next_lr = next_lr.to(self.device)
 
-        # RVRT expects [0,1], LDMVFI expects [-1,1]
         prev_01 = (prev_lr + 1.0) / 2.0
         next_01 = (next_lr + 1.0) / 2.0
         prev_sr, next_sr = self.super_resolve_neighbors(prev_01, next_01)
@@ -129,16 +124,31 @@ class RVRTLDMVFIPipeline:
         with scope:
             xc = {"prev_frame": prev_sr, "next_frame": next_sr}
             if getattr(self.model, "use_flow_guidance", False):
-                self.last_flow_prior = build_flow_guided_middle_prior(
-                    prev_lr,
-                    next_lr,
-                    prev_sr,
-                    next_sr,
-                    backend=getattr(self.model, "flow_backend", "farneback"),
-                    raft_variant=getattr(self.model, "flow_raft_variant", "large"),
-                    raft_ckpt=getattr(self.model, "flow_raft_ckpt", None),
-                )
-                xc[getattr(self.model, "cond_flow_key", "flow_prior")] = self.last_flow_prior
+                flow_mode = getattr(self.model, "flow_condition_mode", "fused")
+                if flow_mode == "aligned_input":
+                    aligned_prev, aligned_next = build_flow_aligned_input_pair(
+                        prev_lr,
+                        next_lr,
+                        prev_sr,
+                        next_sr,
+                        backend=getattr(self.model, "flow_backend", "farneback"),
+                        raft_variant=getattr(self.model, "flow_raft_variant", "large"),
+                        raft_ckpt=getattr(self.model, "flow_raft_ckpt", None),
+                    )
+                    xc["prev_frame"] = aligned_prev
+                    xc["next_frame"] = aligned_next
+                    self.last_flow_prior = None
+                else:
+                    self.last_flow_prior = build_flow_guided_middle_prior(
+                        prev_lr,
+                        next_lr,
+                        prev_sr,
+                        next_sr,
+                        backend=getattr(self.model, "flow_backend", "farneback"),
+                        raft_variant=getattr(self.model, "flow_raft_variant", "large"),
+                        raft_ckpt=getattr(self.model, "flow_raft_ckpt", None),
+                    )
+                    xc[getattr(self.model, "cond_flow_key", "flow_prior")] = self.last_flow_prior
             else:
                 self.last_flow_prior = None
             c, phi_prev_list, phi_next_list = self.model.get_learned_conditioning(xc)

@@ -212,7 +212,7 @@ def _warp_with_half_flow(frame: torch.Tensor, flow: torch.Tensor):
     return F.grid_sample(frame, grid, mode="bilinear", padding_mode="border", align_corners=True)
 
 
-def build_flow_guided_middle_prior(
+def build_flow_aligned_input_pair(
     prev_flow_frame: torch.Tensor,
     next_flow_frame: torch.Tensor,
     prev_target_frame: torch.Tensor,
@@ -221,11 +221,10 @@ def build_flow_guided_middle_prior(
     raft_variant: str = "large",
     raft_ckpt: str = None,
 ):
-    """@brief 构造光流引导的中间时刻先验帧。
-
-    @example 当 `backend=farneback` 时，先在较低分辨率邻帧上估计光流，
-    再上采样到目标尺度；当 `backend=raft` 时，直接在目标尺度邻帧上估计
-    光流，以避免低分辨率输入导致的数值不稳定，再对目标帧做半步 warp。
+    """@brief 构造对齐到中间时刻的前后条件帧。
+    @example
+    使用双向光流将 `prev_target_frame / next_target_frame` 分别 warp 到
+    `t=0.5`，再直接作为生成模型的主条件输入。
     """
     if backend == "raft":
         flow_prev_to_next, flow_next_to_prev = _estimate_bidirectional_flow(
@@ -247,5 +246,32 @@ def build_flow_guided_middle_prior(
     flow_next_to_prev = _resize_flow(flow_next_to_prev.to(next_target_frame.device), next_target_frame.shape[-2:])
     warped_prev = _warp_with_half_flow(prev_target_frame, flow_prev_to_next)
     warped_next = _warp_with_half_flow(next_target_frame, flow_next_to_prev)
+    return torch.clamp(warped_prev, min=-1.0, max=1.0), torch.clamp(warped_next, min=-1.0, max=1.0)
+
+
+def build_flow_guided_middle_prior(
+    prev_flow_frame: torch.Tensor,
+    next_flow_frame: torch.Tensor,
+    prev_target_frame: torch.Tensor,
+    next_target_frame: torch.Tensor,
+    backend: str = "farneback",
+    raft_variant: str = "large",
+    raft_ckpt: str = None,
+):
+    """@brief 构造光流引导的中间时刻先验帧。
+
+    @example 当 `backend=farneback` 时，先在较低分辨率邻帧上估计光流，
+    再上采样到目标尺度；当 `backend=raft` 时，直接在目标尺度邻帧上估计
+    光流，以避免低分辨率输入导致的数值不稳定，再对目标帧做半步 warp。
+    """
+    warped_prev, warped_next = build_flow_aligned_input_pair(
+        prev_flow_frame,
+        next_flow_frame,
+        prev_target_frame,
+        next_target_frame,
+        backend=backend,
+        raft_variant=raft_variant,
+        raft_ckpt=raft_ckpt,
+    )
     prior = 0.5 * (warped_prev + warped_next)
     return torch.clamp(prior, min=-1.0, max=1.0)

@@ -256,3 +256,25 @@
 
 - `flow_prior` 不再只是对原条件的弱扰动，而是成为更显式的第三路条件信息。
 - 在不修改主干 `UNet` 输入通道的前提下，增强模型对高质量光流先验的利用。
+# 2026/04/22
+
+## Flow 对齐主输入
+- 针对 `RAFT + fused/explicit` 仍未稳定超过 baseline 的现象，新增 `flow_condition_mode=aligned_input`。
+- 新模式下不再把光流当作旁路提示，而是先在 `prev_sr / next_sr` 上估双向光流，再将两张 SR 邻帧 warp 到中间时刻，直接替换原始条件输入。
+- 训练类与推理 pipeline 均已接入该模式，`fused/explicit` 保留用于旧实验对比。
+- 纯 flow 配置 `rvrt-flow-guided-stsr-x4.yaml` 默认切到 `aligned_input`，便于直接做新一轮 small eval。
+
+## 人工测试方式
+
+1. 使用 pure flow 配置运行 small eval：  
+   `FLOW_CONDITION_MODE=aligned_input FLOW_BACKEND=raft ... bash run_cloud_eval_rvrt_ldmvfi.sh`
+2. 对比三组结果：  
+   - no-flow baseline  
+   - `RAFT + fused/explicit`  
+   - `RAFT + aligned_input`
+3. 重点观察 `fast_test / medium_test` 上的 `PSNR / SSIM / LPIPS`。
+
+## 预期结果
+
+- 如果当前瓶颈确实在“光流只做旁路提示”，那么 `aligned_input` 应至少优于 `fused/explicit`。
+- 若仍无法接近 baseline，则说明“先对齐再生成”在当前框架下也缺乏足够收益信号。
