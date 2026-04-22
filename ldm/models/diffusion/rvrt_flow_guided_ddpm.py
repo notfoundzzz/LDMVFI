@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from torch.optim.lr_scheduler import LambdaLR
 
 from ldm.models.diffusion.ddpm import LatentDiffusionVFI
@@ -28,6 +29,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         flow_backend="farneback",
         flow_raft_variant="large",
         flow_raft_ckpt=None,
+        image_recon_loss_weight=0.0,
+        image_recon_loss_type="l1",
         *args,
         **kwargs,
     ):
@@ -43,6 +46,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         self.flow_backend = str(flow_backend)
         self.flow_raft_variant = str(flow_raft_variant)
         self.flow_raft_ckpt = flow_raft_ckpt
+        self.image_recon_loss_weight = float(image_recon_loss_weight)
+        self.image_recon_loss_type = str(image_recon_loss_type)
         self.cond_latent_channels = int(getattr(self.cond_stage_model, "embed_dim", self.channels))
         self.flow_condition_fuser = None
         if self.use_flow_guidance and self.flow_condition_mode == "explicit":
@@ -80,6 +85,10 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             f"Flow guidance enabled: {self.use_flow_guidance}, strength={self.flow_guidance_strength:.3f}, "
             f"mode={self.flow_condition_mode}, backend={self.flow_backend}, raft_variant={self.flow_raft_variant}"
         )
+        print(
+            f"Image recon guidance enabled: {self.image_recon_loss_weight > 0.0}, "
+            f"type={self.image_recon_loss_type}, weight={self.image_recon_loss_weight:.3f}"
+        )
 
     def on_save_checkpoint(self, checkpoint):
         super().on_save_checkpoint(checkpoint)
@@ -90,6 +99,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             "flow_backend": self.flow_backend,
             "flow_raft_variant": self.flow_raft_variant,
             "flow_raft_ckpt": self.flow_raft_ckpt,
+            "image_recon_loss_weight": self.image_recon_loss_weight,
+            "image_recon_loss_type": self.image_recon_loss_type,
         }
 
     def on_fit_start(self):
@@ -217,6 +228,94 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             out.append(phi_prev_list)
             out.append(phi_next_list)
         return out
+
+    def shared_step(self, batch, **kwargs):
+        z, c, x, _, xc, phi_prev_list, phi_next_list = self.get_input(
+            batch,
+            self.first_stage_key,
+            return_first_stage_outputs=True,
+            return_original_cond=True,
+            return_phi=True,
+        )
+        loss = self(
+            z,
+            c,
+            x_image=x,
+            xc=xc,
+            phi_prev_list=phi_prev_list,
+            phi_next_list=phi_next_list,
+        )
+        return loss
+
+    def forward(self, x, c, x_image=None, xc=None, phi_prev_list=None, phi_next_list=None, *args, **kwargs):
+        t = torch.randint(0, self.num_timesteps, (x.shape[0],), device=self.device).long()
+        if self.model.conditioning_key is not None:
+            assert c is not None
+            if self.cond_stage_trainable:
+                c, _, _ = self.get_learned_conditioning(c)
+            if self.shorten_cond_schedule:
+                tc = self.cond_ids[t].to(self.device)
+                c = self.q_sample(x_start=c, t=tc, noise=torch.randn_like(c.float()))
+        return self.p_losses(
+            x,
+            c,
+            t,
+            x_image=x_image,
+            xc=xc,
+            phi_prev_list=phi_prev_list,
+            phi_next_list=phi_next_list,
+            *args,
+            **kwargs,
+        )
+
+    def _compute_image_recon_loss(self, pred_image, target_image):
+        if self.image_recon_loss_type == "l1":
+            return F.l1_loss(pred_image, target_image)
+        raise ValueError(f"Unsupported image recon loss type: {self.image_recon_loss_type}")
+
+    def p_losses(self, x_start, cond, t, noise=None, x_image=None, xc=None, phi_prev_list=None, phi_next_list=None):
+        noise = noise if noise is not None else torch.randn_like(x_start)
+        x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
+        model_output = self.apply_model(x_noisy, t, cond)
+
+        loss_dict = {}
+        prefix = "train" if self.training else "val"
+
+        if self.parameterization == "x0":
+            target = x_start
+            pred_x0 = model_output
+        elif self.parameterization == "eps":
+            target = noise
+            pred_x0 = self.predict_start_from_noise(x_noisy, t=t, noise=model_output)
+        else:
+            raise NotImplementedError()
+
+        loss_simple = self.get_loss(model_output, target, mean=False).mean([1, 2, 3])
+        loss_dict.update({f"{prefix}/loss_simple": loss_simple.mean()})
+
+        logvar_t = self.logvar[t].to(self.device)
+        loss = loss_simple / torch.exp(logvar_t) + logvar_t
+        if self.learn_logvar:
+            loss_dict.update({f"{prefix}/loss_gamma": loss.mean()})
+            loss_dict.update({"logvar": self.logvar.data.mean()})
+
+        loss = self.l_simple_weight * loss.mean()
+
+        loss_vlb = self.get_loss(model_output, target, mean=False).mean(dim=(1, 2, 3))
+        loss_vlb = (self.lvlb_weights[t] * loss_vlb).mean()
+        loss_dict.update({f"{prefix}/loss_vlb": loss_vlb})
+        loss += self.original_elbo_weight * loss_vlb
+
+        if self.image_recon_loss_weight > 0.0 and x_image is not None and xc is not None:
+            #! \brief 在图像空间增加重建约束，使训练方向更贴近 PSNR/SSIM。
+            #! \example 当扩散损失继续下降但评测指标平台时，可用该项约束输出更接近 GT。
+            pred_image = self.decode_first_stage(pred_x0, xc, phi_prev_list, phi_next_list)
+            recon_loss = self._compute_image_recon_loss(pred_image, x_image)
+            loss_dict.update({f"{prefix}/loss_recon": recon_loss})
+            loss = loss + self.image_recon_loss_weight * recon_loss
+
+        loss_dict.update({f"{prefix}/loss": loss})
+        return loss, loss_dict
 
     def configure_optimizers(self):
         params = [p for p in self.model.parameters() if p.requires_grad]

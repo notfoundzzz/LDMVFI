@@ -23,6 +23,8 @@ model:
     flow_backend: farneback
     flow_raft_variant: large
     flow_raft_ckpt: null
+    image_recon_loss_weight: 0.1
+    image_recon_loss_type: l1
     unet_config:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel
       params:

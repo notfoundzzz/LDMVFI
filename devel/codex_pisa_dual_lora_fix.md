@@ -1,3 +1,23 @@
+# 2026/04/22
+
+## 图像重建损失引导
+- 在纯 `RVRT + LDMVFI + flow` 训练类中增加可选的图像空间重建损失，默认采用 `L1`。
+- 新损失形式为：`loss = diffusion_loss + image_recon_loss_weight * recon_loss`，用于让训练方向更贴近 `PSNR/SSIM`。
+- 当前只改纯 flow 主线，不影响 `PiSA / LoRA` 训练分支。
+
+## 人工测试方式
+
+1. 使用更新后的 `configs/ldm/rvrt-flow-guided-stsr-x4.yaml` 启动一条短训练。
+2. 观察日志中出现：
+   - `Image recon guidance enabled: True`
+   - `type=l1, weight=0.100`
+3. 训练完成后运行 small eval，对比旧版纯 flow 训练结果。
+
+## 预期结果
+
+- 训练日志中会新增 `train/loss_recon` 与 `val/loss_recon(_ema)`。
+- 若该辅助损失有效，纯 flow 版本应比旧版更接近 `baseline`，或在某个 split 上出现小幅正向变化。
+
 # 2026/04/21
 
 ## RAFT 在 SR 邻帧上估流
