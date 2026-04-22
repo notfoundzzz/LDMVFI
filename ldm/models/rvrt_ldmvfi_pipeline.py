@@ -44,9 +44,17 @@ class RVRTLDMVFIPipeline:
             )
 
         missing, unexpected = self.model.load_state_dict(state_dict, strict=False)
-        if unexpected:
+        if unexpected and self.strict_checkpoint:
             raise ValueError(
                 "Unexpected checkpoint keys were found while loading the diffusion model. "
+                f"First keys: {unexpected[:10]}"
+            )
+        if unexpected and not self.strict_checkpoint:
+            #! \brief 允许在人工切换 flow condition mode 时复用旧 checkpoint。
+            #! \example explicit 训练得到的 ckpt 中可能包含 flow_condition_fuser.*，
+            #!          但 aligned_input 推理不再实例化该模块，此时忽略多余参数即可。
+            print(
+                "Ignoring unexpected checkpoint keys because strict checkpoint loading is disabled. "
                 f"First keys: {unexpected[:10]}"
             )
         if model_has_lora:
