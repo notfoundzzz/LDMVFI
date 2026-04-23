@@ -1,3 +1,27 @@
+# 2026/04/23
+
+## LumosFlow-lite: latent motion explicit
+- 新增 `flow_condition_mode=latent_explicit`，不再构造图像空间 `flow_prior`，而是直接将双向光流编码为 latent motion feature。
+- 新增增强版 `latent_motion_encoder`：输入归一化后的双向光流与幅值通道，共 6 通道，经过小残差塔输出与条件 latent 对齐的 motion feature。
+- 新增 `latent_motion_phi_fusers`，将 latent motion feature 以 zero-init 1x1 残差的形式同步注入 `phi_prev_list / phi_next_list`，让细节重建分支也能感知运动先验。
+- 保留现有 `zero-init gated residual` 思路：`c = c_base + gate * delta_c`，避免训练初期扰动预训练 `LDMVFI` 的条件分布。
+- 这条路线借鉴了 LFDM / OnlyFlow / LumosFlow 中“先做 motion latent，再做控制注入”的思想，但不引入完整的 OF-VAE / flow diffusion / MotionControlNet。
+
+## 人工测试方式
+1. 启动短训练并覆盖：
+   - `FLOW_CONDITION_MODE=latent_explicit`
+   - `FLOW_BACKEND=raft`
+   - `IMAGE_RECON_LOSS_WEIGHT=0.0`
+2. 观察日志出现：
+   - `mode=latent_explicit`
+   - `Latent motion encoder enabled: hidden=32, zero_init_last=True`
+   - `Flow condition gate init: 0.000`
+3. 训练早期用 `epoch=0` / `epoch=1` 跑 `fast_test` 与 `medium_test` small eval。
+
+## 预期结果
+- 训练初期至少不应比 baseline 更差。
+- 若 latent motion 分支被模型真正吸收，后续 checkpoint 应比旧的 `explicit` 更有提升趋势。
+
 # 2026/04/22
 
 ## Explicit zero-init gated residual

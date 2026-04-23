@@ -3,7 +3,11 @@ import torch.nn.functional as F
 from torch.optim.lr_scheduler import LambdaLR
 
 from ldm.models.diffusion.ddpm import LatentDiffusionVFI
-from ldm.models.flow_guidance import build_flow_aligned_input_pair, build_flow_guided_middle_prior
+from ldm.models.flow_guidance import (
+    build_bidirectional_flow_tensor,
+    build_flow_aligned_input_pair,
+    build_flow_guided_middle_prior,
+)
 from ldm.models.rvrt_frontend import build_sr_frontend
 from ldm.util import instantiate_from_config
 
@@ -12,8 +16,24 @@ def _is_rank_zero(module):
     return int(getattr(module, "global_rank", 0)) == 0
 
 
+class _LatentMotionResidualBlock(torch.nn.Module):
+    """@brief 轻量残差块，用于增强 latent motion encoder 的局部建模能力�?    @example 输入输出通道保持不变，适合作为小型 motion tower 的中间层�?    """
+
+    def __init__(self, channels):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        self.act = torch.nn.SiLU()
+        self.conv2 = torch.nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+
+    def forward(self, x):
+        residual = x
+        x = self.act(self.conv1(x))
+        x = self.conv2(x)
+        return self.act(x + residual)
+
+
 class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
-    """纯光流引导训练类。"""
+    """纯光流引导训练类�?""
 
     def __init__(
         self,
@@ -33,6 +53,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         flow_backend="farneback",
         flow_raft_variant="large",
         flow_raft_ckpt=None,
+        latent_motion_hidden_channels=32,
+        latent_motion_zero_init_last=True,
         image_recon_loss_weight=0.0,
         image_recon_loss_type="charbonnier",
         *args,
@@ -50,21 +72,30 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         self.flow_backend = str(flow_backend)
         self.flow_raft_variant = str(flow_raft_variant)
         self.flow_raft_ckpt = flow_raft_ckpt
+        self.latent_motion_hidden_channels = int(latent_motion_hidden_channels)
+        self.latent_motion_zero_init_last = bool(latent_motion_zero_init_last)
         self.image_recon_loss_weight = float(image_recon_loss_weight)
         self.image_recon_loss_type = str(image_recon_loss_type)
         self.cond_latent_channels = int(getattr(self.cond_stage_model, "embed_dim", self.channels))
         self.flow_condition_fuser = None
         self.flow_condition_gate = None
-        if self.use_flow_guidance and self.flow_condition_mode == "explicit":
+        self.latent_motion_encoder = None
+        self.latent_motion_phi_fusers = None
+        if self.use_flow_guidance and self.flow_condition_mode in ("explicit", "latent_explicit"):
             self.flow_condition_fuser = torch.nn.Conv2d(
                 self.cond_latent_channels * 3,
                 self.cond_latent_channels * 2,
                 kernel_size=1,
             )
-            #! \brief zero-init residual gate 让 flow 分支初始时严格等价于 baseline 条件分布。
+            #! \brief zero-init residual gate �?flow 分支初始时严格等价于 baseline 条件分布�?
             torch.nn.init.zeros_(self.flow_condition_fuser.weight)
             torch.nn.init.zeros_(self.flow_condition_fuser.bias)
             self.flow_condition_gate = torch.nn.Parameter(torch.zeros(1))
+            self.flow_condition_fuser.weight.data.zero_()
+            self.flow_condition_fuser.bias.data.zero_()
+        if self.use_flow_guidance and self.flow_condition_mode == "latent_explicit":
+            self.latent_motion_encoder = self._build_latent_motion_encoder()
+            self.latent_motion_phi_fusers = self._build_latent_motion_phi_fusers()
 
         self.rvrt_frontend = build_sr_frontend(
             sr_mode="rvrt",
@@ -87,6 +118,14 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             param.requires_grad = True
 
         trainable = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        if self.flow_condition_fuser is not None:
+            trainable += sum(p.numel() for p in self.flow_condition_fuser.parameters() if p.requires_grad)
+        if self.latent_motion_encoder is not None:
+            trainable += sum(p.numel() for p in self.latent_motion_encoder.parameters() if p.requires_grad)
+        if self.latent_motion_phi_fusers is not None:
+            trainable += sum(p.numel() for p in self.latent_motion_phi_fusers.parameters() if p.requires_grad)
+        if self.flow_condition_gate is not None and self.flow_condition_gate.requires_grad:
+            trainable += self.flow_condition_gate.numel()
         if _is_rank_zero(self):
             print(f"Full-tuning diffusion UNet with {trainable} trainable parameters")
             print("RVRT frontend frozen")
@@ -97,10 +136,52 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             )
             if self.flow_condition_gate is not None:
                 print(f"Flow condition gate init: {float(self.flow_condition_gate.detach().item()):.3f}")
+            if self.latent_motion_encoder is not None:
+                print(
+                    "Latent motion encoder enabled: "
+                    f"hidden={self.latent_motion_hidden_channels}, "
+                    f"zero_init_last={self.latent_motion_zero_init_last}"
+                )
+            if self.latent_motion_phi_fusers is not None:
+                print(f"Latent motion phi fusers enabled: levels={len(self.latent_motion_phi_fusers)}")
             print(
                 f"Image recon guidance enabled: {self.image_recon_loss_weight > 0.0}, "
                 f"type={self.image_recon_loss_type}, weight={self.image_recon_loss_weight:.3f}"
             )
+
+    def _build_latent_motion_encoder(self):
+        """@brief 构造增强版 latent motion encoder，将双向光流与幅值编码到条件 latent 空间�?        @example 输入 `B x 6 x H x W` 的归一�?motion tensor，输�?        `B x cond_latent_channels x H x W` �?motion latent feature�?        """
+        hidden = self.latent_motion_hidden_channels
+        encoder = torch.nn.Sequential(
+            torch.nn.Conv2d(6, hidden, kernel_size=3, padding=1),
+            torch.nn.SiLU(),
+            torch.nn.Conv2d(hidden, hidden, kernel_size=3, padding=1),
+            torch.nn.SiLU(),
+            _LatentMotionResidualBlock(hidden),
+            _LatentMotionResidualBlock(hidden),
+            torch.nn.Conv2d(hidden, self.cond_latent_channels, kernel_size=3, padding=1),
+        )
+        if self.latent_motion_zero_init_last:
+            torch.nn.init.zeros_(encoder[-1].weight)
+            torch.nn.init.zeros_(encoder[-1].bias)
+        return encoder
+
+    def _build_latent_motion_phi_fusers(self):
+        """@brief 为各�?`phi_prev_list / phi_next_list` 构�?zero-init 1x1 motion fuser�?        @example �?encoder 共有 5 个尺度，则返�?5 �?`1x1 Conv`�?        �?`cond_latent_channels` 映射到对�?`phi` 通道数�?        """
+        encoder = getattr(self.cond_stage_model, "encoder", None)
+        down_modules = getattr(encoder, "down", None)
+        if down_modules is None:
+            return None
+        fusers = []
+        for down in down_modules:
+            phi_channels = getattr(down.block[-1], "out_channels", None)
+            if phi_channels is None:
+                return None
+            fuser = torch.nn.Conv2d(self.cond_latent_channels, phi_channels, kernel_size=1)
+            torch.nn.init.zeros_(fuser.weight)
+            torch.nn.init.zeros_(fuser.bias)
+            fusers.append(fuser)
+        return torch.nn.ModuleList(fusers)
 
     def on_save_checkpoint(self, checkpoint):
         super().on_save_checkpoint(checkpoint)
@@ -111,6 +192,11 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             "flow_backend": self.flow_backend,
             "flow_raft_variant": self.flow_raft_variant,
             "flow_raft_ckpt": self.flow_raft_ckpt,
+            "latent_motion_hidden_channels": self.latent_motion_hidden_channels,
+            "latent_motion_zero_init_last": self.latent_motion_zero_init_last,
+            "latent_motion_phi_levels": None
+            if self.latent_motion_phi_fusers is None
+            else len(self.latent_motion_phi_fusers),
             "flow_condition_gate_init": None
             if self.flow_condition_gate is None
             else float(self.flow_condition_gate.detach().item()),
@@ -124,7 +210,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
 
     @torch.no_grad()
     def _super_resolve_neighbors(self, batch, bs=None):
-        """LR 邻帧先做 SR。"""
+        """LR 邻帧先做 SR�?""
         prev_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_prev_key).to(self.device)
         next_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_next_key).to(self.device)
         if bs is not None:
@@ -151,44 +237,83 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         )
 
     def get_learned_conditioning(self, c):
-        """编码条件。"""
+        """编码条件�?""
         phi_prev_list, phi_next_list = None, None
         if isinstance(c, dict) and self.cond_prev_key in c.keys():
             c_prev, phi_prev_list = self.cond_stage_model.encode(c[self.cond_prev_key], ret_feature=True)
             c_next, phi_next_list = self.cond_stage_model.encode(c[self.cond_next_key], ret_feature=True)
             if self.use_flow_guidance and self.cond_flow_key in c:
-                c_flow, phi_flow_list = self.cond_stage_model.encode(c[self.cond_flow_key], ret_feature=True)
                 mix = self.flow_guidance_strength
-                if self.flow_condition_mode == "explicit":
+                if self.flow_condition_mode == "latent_explicit":
+                    flow_tensor = F.interpolate(
+                        c[self.cond_flow_key],
+                        size=c_prev.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+                    c_flow = self.latent_motion_encoder(flow_tensor)
                     c_base = torch.cat([c_prev, c_next], dim=1)
                     delta_c = self.flow_condition_fuser(torch.cat([c_prev, c_flow, c_next], dim=1))
                     c = c_base + self.flow_condition_gate * delta_c
-                    if phi_prev_list is not None and phi_next_list is not None and phi_flow_list is not None:
-                        phi_prev_list = [
-                            None
-                            if prev_feat is None
-                            else prev_feat + self.flow_condition_gate * mix * flow_feat
-                            for prev_feat, flow_feat in zip(phi_prev_list, phi_flow_list)
-                        ]
-                        phi_next_list = [
-                            None
-                            if next_feat is None
-                            else next_feat + self.flow_condition_gate * mix * flow_feat
-                            for next_feat, flow_feat in zip(phi_next_list, phi_flow_list)
-                        ]
+                    if (
+                        phi_prev_list is not None
+                        and phi_next_list is not None
+                        and self.latent_motion_phi_fusers is not None
+                    ):
+                        phi_prev_out = []
+                        phi_next_out = []
+                        for prev_feat, next_feat, phi_fuser in zip(
+                            phi_prev_list,
+                            phi_next_list,
+                            self.latent_motion_phi_fusers,
+                        ):
+                            if prev_feat is None or next_feat is None:
+                                phi_prev_out.append(prev_feat)
+                                phi_next_out.append(next_feat)
+                                continue
+                            motion_feat = F.interpolate(
+                                c_flow,
+                                size=prev_feat.shape[-2:],
+                                mode="bilinear",
+                                align_corners=False,
+                            )
+                            motion_feat = phi_fuser(motion_feat)
+                            phi_prev_out.append(prev_feat + self.flow_condition_gate * mix * motion_feat)
+                            phi_next_out.append(next_feat + self.flow_condition_gate * mix * motion_feat)
+                        phi_prev_list = phi_prev_out
+                        phi_next_list = phi_next_out
                 else:
-                    c_prev = (1.0 - mix) * c_prev + mix * c_flow
-                    c_next = (1.0 - mix) * c_next + mix * c_flow
-                    if phi_prev_list is not None and phi_next_list is not None and phi_flow_list is not None:
-                        phi_prev_list = [
-                            None if prev_feat is None else (1.0 - mix) * prev_feat + mix * flow_feat
-                            for prev_feat, flow_feat in zip(phi_prev_list, phi_flow_list)
-                        ]
-                        phi_next_list = [
-                            None if next_feat is None else (1.0 - mix) * next_feat + mix * flow_feat
-                            for next_feat, flow_feat in zip(phi_next_list, phi_flow_list)
-                        ]
-                    c = torch.cat([c_prev, c_next], dim=1)
+                    c_flow, phi_flow_list = self.cond_stage_model.encode(c[self.cond_flow_key], ret_feature=True)
+                    if self.flow_condition_mode == "explicit":
+                        c_base = torch.cat([c_prev, c_next], dim=1)
+                        delta_c = self.flow_condition_fuser(torch.cat([c_prev, c_flow, c_next], dim=1))
+                        c = c_base + self.flow_condition_gate * delta_c
+                        if phi_prev_list is not None and phi_next_list is not None and phi_flow_list is not None:
+                            phi_prev_list = [
+                                None
+                                if prev_feat is None
+                                else prev_feat + self.flow_condition_gate * mix * flow_feat
+                                for prev_feat, flow_feat in zip(phi_prev_list, phi_flow_list)
+                            ]
+                            phi_next_list = [
+                                None
+                                if next_feat is None
+                                else next_feat + self.flow_condition_gate * mix * flow_feat
+                                for next_feat, flow_feat in zip(phi_next_list, phi_flow_list)
+                            ]
+                    else:
+                        c_prev = (1.0 - mix) * c_prev + mix * c_flow
+                        c_next = (1.0 - mix) * c_next + mix * c_flow
+                        if phi_prev_list is not None and phi_next_list is not None and phi_flow_list is not None:
+                            phi_prev_list = [
+                                None if prev_feat is None else (1.0 - mix) * prev_feat + mix * flow_feat
+                                for prev_feat, flow_feat in zip(phi_prev_list, phi_flow_list)
+                            ]
+                            phi_next_list = [
+                                None if next_feat is None else (1.0 - mix) * next_feat + mix * flow_feat
+                                for next_feat, flow_feat in zip(phi_next_list, phi_flow_list)
+                            ]
+                        c = torch.cat([c_prev, c_next], dim=1)
             else:
                 c = torch.cat([c_prev, c_next], dim=1)
         else:
@@ -235,6 +360,16 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
                 )
                 xc[self.cond_prev_key] = aligned_prev
                 xc[self.cond_next_key] = aligned_next
+            elif self.flow_condition_mode == "latent_explicit":
+                xc[self.cond_flow_key] = build_bidirectional_flow_tensor(
+                    prev_lr,
+                    next_lr,
+                    prev_sr,
+                    next_sr,
+                    backend=self.flow_backend,
+                    raft_variant=self.flow_raft_variant,
+                    raft_ckpt=self.flow_raft_ckpt,
+                )
             else:
                 xc[self.cond_flow_key] = self._build_flow_guided_prior(prev_lr, next_lr, prev_sr, next_sr)
         c, phi_prev_list, phi_next_list = self.get_learned_conditioning(xc)
@@ -293,7 +428,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         if self.image_recon_loss_type == "l1":
             return F.l1_loss(pred_image, target_image)
         if self.image_recon_loss_type == "charbonnier":
-            #! \brief Charbonnier 姣旇緝閫傚悎褰撳墠閲嶅缓绾︽潫锛屽杈冨ぇ鍍忕礌璇樊鏇寸ǔ瀹氥€?
+            #! \brief Charbonnier 姣旇緝閫傚悎褰撳墠閲嶅缓绾︽潫锛屽杈冨ぇ鍍忕礌璇樊鏇寸ǔ瀹氥�?
             diff = pred_image - target_image
             eps = 1e-6
             return torch.mean(torch.sqrt(diff * diff + eps * eps))
@@ -335,8 +470,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         loss += self.original_elbo_weight * loss_vlb
 
         if self.image_recon_loss_weight > 0.0 and x_image is not None and xc is not None:
-            #! \brief 在图像空间增加重建约束，使训练方向更贴近 PSNR/SSIM。
-            #! \example 当扩散损失继续下降但评测指标平台时，可用该项约束输出更接近 GT。
+            #! \brief 在图像空间增加重建约束，使训练方向更贴近 PSNR/SSIM�?
+            #! \example 当扩散损失继续下降但评测指标平台时，可用该��约束输出更接�?GT�?
             pred_image = self.decode_first_stage(pred_x0, xc, phi_prev_list, phi_next_list)
             recon_loss = self._compute_image_recon_loss(pred_image, x_image)
             loss_dict.update({f"{prefix}/loss_recon": recon_loss})
@@ -349,6 +484,10 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         params = [p for p in self.model.parameters() if p.requires_grad]
         if self.flow_condition_fuser is not None:
             params.extend(p for p in self.flow_condition_fuser.parameters() if p.requires_grad)
+        if self.latent_motion_encoder is not None:
+            params.extend(p for p in self.latent_motion_encoder.parameters() if p.requires_grad)
+        if self.latent_motion_phi_fusers is not None:
+            params.extend(p for p in self.latent_motion_phi_fusers.parameters() if p.requires_grad)
         if self.flow_condition_gate is not None and self.flow_condition_gate.requires_grad:
             params.append(self.flow_condition_gate)
         if not params:
@@ -357,7 +496,9 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             params.append(self.logvar)
         opt = torch.optim.AdamW(params, lr=self.learning_rate)
         if _is_rank_zero(self):
-            if self.flow_condition_fuser is not None:
+            if self.flow_condition_fuser is not None and self.latent_motion_encoder is not None:
+                print(f"Optimizer groups: diffusion+flow_fuser+motion_encoder+phi_fuser lr={self.learning_rate:.2e}")
+            elif self.flow_condition_fuser is not None:
                 print(f"Optimizer groups: diffusion+flow_fuser lr={self.learning_rate:.2e}")
             else:
                 print(f"Optimizer groups: diffusion lr={self.learning_rate:.2e}")

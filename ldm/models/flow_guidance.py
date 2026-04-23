@@ -275,3 +275,50 @@ def build_flow_guided_middle_prior(
     )
     prior = 0.5 * (warped_prev + warped_next)
     return torch.clamp(prior, min=-1.0, max=1.0)
+
+
+def build_bidirectional_flow_tensor(
+    prev_flow_frame: torch.Tensor,
+    next_flow_frame: torch.Tensor,
+    prev_target_frame: torch.Tensor,
+    next_target_frame: torch.Tensor,
+    backend: str = "farneback",
+    raft_variant: str = "large",
+    raft_ckpt: str = None,
+):
+    """@brief 构造归一化后的双向光流张量与幅值通道，供 latent motion encoder 直接编码。
+    @example 输出形状为 `B x 6 x H x W`，其中前 2 通道为 `prev->next`，
+    中间 2 通道为 `next->prev`，最后 2 通道为对应的光流幅值图。
+    """
+    if backend == "raft":
+        flow_prev_to_next, flow_next_to_prev = _estimate_bidirectional_flow(
+            prev_target_frame,
+            next_target_frame,
+            backend=backend,
+            raft_variant=raft_variant,
+            raft_ckpt=raft_ckpt,
+        )
+    else:
+        flow_prev_to_next, flow_next_to_prev = _estimate_bidirectional_flow(
+            prev_flow_frame,
+            next_flow_frame,
+            backend=backend,
+            raft_variant=raft_variant,
+            raft_ckpt=raft_ckpt,
+        )
+    target_hw = prev_target_frame.shape[-2:]
+    flow_prev_to_next = _resize_flow(flow_prev_to_next.to(prev_target_frame.device), target_hw)
+    flow_next_to_prev = _resize_flow(flow_next_to_prev.to(next_target_frame.device), target_hw)
+
+    target_h, target_w = target_hw
+    norm_w = float(max(target_w - 1, 1))
+    norm_h = float(max(target_h - 1, 1))
+    flow_prev_to_next = flow_prev_to_next.clone()
+    flow_next_to_prev = flow_next_to_prev.clone()
+    flow_prev_to_next[:, 0] /= norm_w
+    flow_prev_to_next[:, 1] /= norm_h
+    flow_next_to_prev[:, 0] /= norm_w
+    flow_next_to_prev[:, 1] /= norm_h
+    mag_prev_to_next = torch.sqrt(torch.sum(flow_prev_to_next * flow_prev_to_next, dim=1, keepdim=True))
+    mag_next_to_prev = torch.sqrt(torch.sum(flow_next_to_prev * flow_next_to_prev, dim=1, keepdim=True))
+    return torch.cat([flow_prev_to_next, flow_next_to_prev, mag_prev_to_next, mag_next_to_prev], dim=1)
