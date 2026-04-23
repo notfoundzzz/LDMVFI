@@ -8,6 +8,10 @@ from ldm.models.rvrt_frontend import build_sr_frontend
 from ldm.util import instantiate_from_config
 
 
+def _is_rank_zero(module):
+    return int(getattr(module, "global_rank", 0)) == 0
+
+
 class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
     """纯光流引导训练类。"""
 
@@ -83,19 +87,20 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             param.requires_grad = True
 
         trainable = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
-        print(f"Full-tuning diffusion UNet with {trainable} trainable parameters")
-        print("RVRT frontend frozen")
-        print("First-stage and cond-stage frozen")
-        print(
-            f"Flow guidance enabled: {self.use_flow_guidance}, strength={self.flow_guidance_strength:.3f}, "
-            f"mode={self.flow_condition_mode}, backend={self.flow_backend}, raft_variant={self.flow_raft_variant}"
-        )
-        if self.flow_condition_gate is not None:
-            print(f"Flow condition gate init: {float(self.flow_condition_gate.detach().item()):.3f}")
-        print(
-            f"Image recon guidance enabled: {self.image_recon_loss_weight > 0.0}, "
-            f"type={self.image_recon_loss_type}, weight={self.image_recon_loss_weight:.3f}"
-        )
+        if _is_rank_zero(self):
+            print(f"Full-tuning diffusion UNet with {trainable} trainable parameters")
+            print("RVRT frontend frozen")
+            print("First-stage and cond-stage frozen")
+            print(
+                f"Flow guidance enabled: {self.use_flow_guidance}, strength={self.flow_guidance_strength:.3f}, "
+                f"mode={self.flow_condition_mode}, backend={self.flow_backend}, raft_variant={self.flow_raft_variant}"
+            )
+            if self.flow_condition_gate is not None:
+                print(f"Flow condition gate init: {float(self.flow_condition_gate.detach().item()):.3f}")
+            print(
+                f"Image recon guidance enabled: {self.image_recon_loss_weight > 0.0}, "
+                f"type={self.image_recon_loss_type}, weight={self.image_recon_loss_weight:.3f}"
+            )
 
     def on_save_checkpoint(self, checkpoint):
         super().on_save_checkpoint(checkpoint)
@@ -325,6 +330,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         loss_vlb = self.get_loss(model_output, target, mean=False).mean(dim=(1, 2, 3))
         loss_vlb = (self.lvlb_weights[t] * loss_vlb).mean()
         loss_dict.update({f"{prefix}/loss_vlb": loss_vlb})
+        if self.flow_condition_gate is not None:
+            loss_dict.update({f"{prefix}/flow_condition_gate": self.flow_condition_gate.detach()})
         loss += self.original_elbo_weight * loss_vlb
 
         if self.image_recon_loss_weight > 0.0 and x_image is not None and xc is not None:
@@ -349,10 +356,11 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         if self.learn_logvar:
             params.append(self.logvar)
         opt = torch.optim.AdamW(params, lr=self.learning_rate)
-        if self.flow_condition_fuser is not None:
-            print(f"Optimizer groups: diffusion+flow_fuser lr={self.learning_rate:.2e}")
-        else:
-            print(f"Optimizer groups: diffusion lr={self.learning_rate:.2e}")
+        if _is_rank_zero(self):
+            if self.flow_condition_fuser is not None:
+                print(f"Optimizer groups: diffusion+flow_fuser lr={self.learning_rate:.2e}")
+            else:
+                print(f"Optimizer groups: diffusion lr={self.learning_rate:.2e}")
         if self.use_scheduler:
             scheduler = instantiate_from_config(self.scheduler_config)
             scheduler = [{"scheduler": LambdaLR(opt, lr_lambda=scheduler.schedule), "interval": "step", "frequency": 1}]
