@@ -30,7 +30,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         flow_raft_variant="large",
         flow_raft_ckpt=None,
         image_recon_loss_weight=0.0,
-        image_recon_loss_type="l1",
+        image_recon_loss_type="charbonnier",
         *args,
         **kwargs,
     ):
@@ -271,6 +271,11 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
     def _compute_image_recon_loss(self, pred_image, target_image):
         if self.image_recon_loss_type == "l1":
             return F.l1_loss(pred_image, target_image)
+        if self.image_recon_loss_type == "charbonnier":
+            #! \brief Charbonnier 姣旇緝閫傚悎褰撳墠閲嶅缓绾︽潫锛屽杈冨ぇ鍍忕礌璇樊鏇寸ǔ瀹氥€?
+            diff = pred_image - target_image
+            eps = 1e-6
+            return torch.mean(torch.sqrt(diff * diff + eps * eps))
         raise ValueError(f"Unsupported image recon loss type: {self.image_recon_loss_type}")
 
     def p_losses(self, x_start, cond, t, noise=None, x_image=None, xc=None, phi_prev_list=None, phi_next_list=None):

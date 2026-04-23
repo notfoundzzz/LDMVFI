@@ -1,5 +1,21 @@
 # 2026/04/22
 
+## Charbonnier 鏇挎崲 L1
+- 灏?`image_recon_loss_type` 鐨勯粯璁ゅ€间粠 `l1` 鏀逛负 `charbonnier`锛屼粎淇濇寔鐜版湁 `recon guidance` 妗嗘灦涓嶅彉銆?
+- `Charbonnier` 褰㈠紡涓?`mean(sqrt(diff^2 + eps^2))`锛岀敤浜庢瘮 `L1` 鏇寸ǔ瀹氬湴绾︽潫鍥惧儚绌洪棿閲嶅缓銆?
+
+## 浜哄伐娴嬭瘯鏂瑰紡
+
+1. 浣跨敤鏇存柊鍚庣殑 `configs/ldm/rvrt-flow-guided-stsr-x4.yaml` 鍚姩涓€鏉＄煭璁粌銆?
+2. 瑙傚療鍚姩鏃ュ織锛岀‘璁ゆ墦鍗帮細
+   - `Image recon guidance enabled: True`
+   - `type=charbonnier, weight=0.100`
+3. 璁粌瀹屾垚鍚庤窇 `fast_test / medium_test` small eval锛屽姣旀棫鐨?`explicit + l1 recon` 缁撴灉銆?
+
+## 棰勬湡缁撴灉
+
+- 鑻?`Charbonnier` 鍦ㄥ綋鍓?flow + diffusion 妗嗘灦涓嬫瘮 `L1` 鏇撮€傚悎锛屽垯 `PSNR/SSIM` 搴斿湪 early small eval 涓婃瘮 `l1` 鐗堟湰鏇存帴杩?baseline 銆?
+
 ## 图像重建损失引导
 - 在纯 `RVRT + LDMVFI + flow` 训练类中增加可选的图像空间重建损失，默认采用 `L1`。
 - 新损失形式为：`loss = diffusion_loss + image_recon_loss_weight * recon_loss`，用于让训练方向更贴近 `PSNR/SSIM`。
