@@ -1,5 +1,23 @@
 # 2026/04/22
 
+## Explicit zero-init gated residual
+- 灏?`flow_condition_mode=explicit` 浠庘€滅洿鎺ユ浛鎹㈡潯浠剁壒寰佲€濇敼鎴愪簡鈥渂aseline 鏉′欢 + gated flow 娈嬪樊鈥濄€?
+- `flow_condition_fuser` 鏉冮噸鍜屽亸缃仛浜?zero-init锛屽悓鏃舵柊澧炲彲瀛︿範鏍囬噺 `flow_condition_gate`锛屽垵濮嬪€间负 `0`銆?
+- 鍒濆鐘舵€佷笅鏁翠釜 flow 鏄惧紡鍒嗘敮涓?baseline 涓ユ牸绛変环锛岀敤浜庡噺灏戝棰勮缁?LDMVFI 鏉′欢鍒嗗竷鐨勬壈鍔ㄣ€?
+
+## 浜哄伐娴嬭瘯鏂瑰紡
+
+1. 鍚姩 `explicit` 绾?flow 璁粌銆?
+2. 瑙傚療鏃ュ織涓嚭鐜帮細
+   - `mode=explicit`
+   - `Flow condition gate init: 0.000`
+3. 浣跨敤鏃?`explicit` checkpoint 杩愯 eval銆?
+   棰勬湡锛氬嵆浣挎棫 checkpoint 娌℃湁 `flow_condition_gate`锛岃瘎娴嬩篃涓嶄細鍥犺缂哄け key 澶辫触銆?
+
+## 棰勬湡缁撴灉
+
+- 鑻ュ綋鍓嶇摱棰堜富瑕佹潵鑷?flow 鍒嗘敮鎵版壈棰勮缁冩潯浠跺垎甯冿紝鍒欐柊鐨?gated residual explicit 搴旇姣旀棫 `explicit` 鏇寸ǔ锛岃嚦灏戞棭鏈熶笉浼氭洿宸€?
+
 ## Charbonnier 鏇挎崲 L1
 - 灏?`image_recon_loss_type` 鐨勯粯璁ゅ€间粠 `l1` 鏀逛负 `charbonnier`锛屼粎淇濇寔鐜版湁 `recon guidance` 妗嗘灦涓嶅彉銆?
 - `Charbonnier` 褰㈠紡涓?`mean(sqrt(diff^2 + eps^2))`锛岀敤浜庢瘮 `L1` 鏇寸ǔ瀹氬湴绾︽潫鍥惧儚绌洪棿閲嶅缓銆?

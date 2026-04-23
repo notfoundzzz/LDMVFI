@@ -85,6 +85,8 @@ class RVRTLDMVFIPipeline:
     def _is_allowed_missing_key(self, key):
         if key.startswith("model_ema.") and not self.use_ema:
             return True
+        if key == "flow_condition_gate":
+            return True
         return False
 
     def _build_eval_frontend(self, sr_mode, scale, rvrt_root, rvrt_task, rvrt_ckpt, tile, tile_overlap):

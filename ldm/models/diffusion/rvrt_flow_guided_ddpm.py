@@ -50,12 +50,17 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         self.image_recon_loss_type = str(image_recon_loss_type)
         self.cond_latent_channels = int(getattr(self.cond_stage_model, "embed_dim", self.channels))
         self.flow_condition_fuser = None
+        self.flow_condition_gate = None
         if self.use_flow_guidance and self.flow_condition_mode == "explicit":
             self.flow_condition_fuser = torch.nn.Conv2d(
                 self.cond_latent_channels * 3,
                 self.cond_latent_channels * 2,
                 kernel_size=1,
             )
+            #! \brief zero-init residual gate 让 flow 分支初始时严格等价于 baseline 条件分布。
+            torch.nn.init.zeros_(self.flow_condition_fuser.weight)
+            torch.nn.init.zeros_(self.flow_condition_fuser.bias)
+            self.flow_condition_gate = torch.nn.Parameter(torch.zeros(1))
 
         self.rvrt_frontend = build_sr_frontend(
             sr_mode="rvrt",
@@ -85,6 +90,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             f"Flow guidance enabled: {self.use_flow_guidance}, strength={self.flow_guidance_strength:.3f}, "
             f"mode={self.flow_condition_mode}, backend={self.flow_backend}, raft_variant={self.flow_raft_variant}"
         )
+        if self.flow_condition_gate is not None:
+            print(f"Flow condition gate init: {float(self.flow_condition_gate.detach().item()):.3f}")
         print(
             f"Image recon guidance enabled: {self.image_recon_loss_weight > 0.0}, "
             f"type={self.image_recon_loss_type}, weight={self.image_recon_loss_weight:.3f}"
@@ -99,6 +106,9 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             "flow_backend": self.flow_backend,
             "flow_raft_variant": self.flow_raft_variant,
             "flow_raft_ckpt": self.flow_raft_ckpt,
+            "flow_condition_gate_init": None
+            if self.flow_condition_gate is None
+            else float(self.flow_condition_gate.detach().item()),
             "image_recon_loss_weight": self.image_recon_loss_weight,
             "image_recon_loss_type": self.image_recon_loss_type,
         }
@@ -145,14 +155,20 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
                 c_flow, phi_flow_list = self.cond_stage_model.encode(c[self.cond_flow_key], ret_feature=True)
                 mix = self.flow_guidance_strength
                 if self.flow_condition_mode == "explicit":
-                    c = self.flow_condition_fuser(torch.cat([c_prev, c_flow, c_next], dim=1))
+                    c_base = torch.cat([c_prev, c_next], dim=1)
+                    delta_c = self.flow_condition_fuser(torch.cat([c_prev, c_flow, c_next], dim=1))
+                    c = c_base + self.flow_condition_gate * delta_c
                     if phi_prev_list is not None and phi_next_list is not None and phi_flow_list is not None:
                         phi_prev_list = [
-                            None if prev_feat is None else prev_feat + mix * flow_feat
+                            None
+                            if prev_feat is None
+                            else prev_feat + self.flow_condition_gate * mix * flow_feat
                             for prev_feat, flow_feat in zip(phi_prev_list, phi_flow_list)
                         ]
                         phi_next_list = [
-                            None if next_feat is None else next_feat + mix * flow_feat
+                            None
+                            if next_feat is None
+                            else next_feat + self.flow_condition_gate * mix * flow_feat
                             for next_feat, flow_feat in zip(phi_next_list, phi_flow_list)
                         ]
                 else:
@@ -326,6 +342,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         params = [p for p in self.model.parameters() if p.requires_grad]
         if self.flow_condition_fuser is not None:
             params.extend(p for p in self.flow_condition_fuser.parameters() if p.requires_grad)
+        if self.flow_condition_gate is not None and self.flow_condition_gate.requires_grad:
+            params.append(self.flow_condition_gate)
         if not params:
             raise RuntimeError("No trainable diffusion parameters found")
         if self.learn_logvar:
