@@ -39,6 +39,8 @@ FLOW_CONDITION_MODE="${FLOW_CONDITION_MODE:-}"
 FLOW_BACKEND="${FLOW_BACKEND:-}"
 FLOW_RAFT_VARIANT="${FLOW_RAFT_VARIANT:-}"
 FLOW_RAFT_CKPT="${FLOW_RAFT_CKPT:-}"
+IMAGE_RECON_LOSS_WEIGHT="${IMAGE_RECON_LOSS_WEIGHT:-}"
+IMAGE_RECON_LOSS_TYPE="${IMAGE_RECON_LOSS_TYPE:-}"
 
 if [[ -z "$VQ_CKPT" || ! -f "$VQ_CKPT" ]]; then
   echo "VQ_CKPT is required"
@@ -77,6 +79,8 @@ echo "flow_condition_mode=${FLOW_CONDITION_MODE:-default}"
 echo "flow_backend=${FLOW_BACKEND:-default}"
 echo "flow_raft_variant=${FLOW_RAFT_VARIANT:-default}"
 echo "flow_raft_ckpt=${FLOW_RAFT_CKPT:-default}"
+echo "image_recon_loss_weight=${IMAGE_RECON_LOSS_WEIGHT:-default}"
+echo "image_recon_loss_type=${IMAGE_RECON_LOSS_TYPE:-default}"
 
 TRAINER_DOTLIST=()
 if [[ -n "$MAX_EPOCHS" ]]; then
@@ -129,6 +133,12 @@ if [[ -n "$FLOW_RAFT_VARIANT" ]]; then
 fi
 if [[ -n "$FLOW_RAFT_CKPT" ]]; then
   CMD+=(model.params.flow_raft_ckpt="$FLOW_RAFT_CKPT")
+fi
+if [[ -n "$IMAGE_RECON_LOSS_WEIGHT" ]]; then
+  CMD+=(model.params.image_recon_loss_weight="$IMAGE_RECON_LOSS_WEIGHT")
+fi
+if [[ -n "$IMAGE_RECON_LOSS_TYPE" ]]; then
+  CMD+=(model.params.image_recon_loss_type="$IMAGE_RECON_LOSS_TYPE")
 fi
 
 "${CMD[@]}"
