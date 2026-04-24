@@ -75,6 +75,11 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         self.image_recon_loss_weight = float(image_recon_loss_weight)
         self.image_recon_loss_type = str(image_recon_loss_type)
         self.cond_latent_channels = int(getattr(self.cond_stage_model, "embed_dim", self.channels))
+        self.use_latent_motion_phi_fusers = (
+            self.use_flow_guidance
+            and self.flow_condition_mode == "latent_explicit"
+            and self.image_recon_loss_weight > 0.0
+        )
         self.flow_condition_fuser = None
         self.flow_condition_gate = None
         self.latent_motion_encoder = None
@@ -85,14 +90,11 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
                 self.cond_latent_channels * 2,
                 kernel_size=1,
             )
-            torch.nn.init.zeros_(self.flow_condition_fuser.weight)
-            torch.nn.init.zeros_(self.flow_condition_fuser.bias)
             self.flow_condition_gate = torch.nn.Parameter(torch.zeros(1))
-            self.flow_condition_fuser.weight.data.zero_()
-            self.flow_condition_fuser.bias.data.zero_()
         if self.use_flow_guidance and self.flow_condition_mode == "latent_explicit":
             self.latent_motion_encoder = self._build_latent_motion_encoder()
-            self.latent_motion_phi_fusers = self._build_latent_motion_phi_fusers()
+            if self.use_latent_motion_phi_fusers:
+                self.latent_motion_phi_fusers = self._build_latent_motion_phi_fusers()
 
         self.rvrt_frontend = build_sr_frontend(
             sr_mode="rvrt",
@@ -141,6 +143,10 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
                 )
             if self.latent_motion_phi_fusers is not None:
                 print(f"Latent motion phi fusers enabled: levels={len(self.latent_motion_phi_fusers)}")
+            elif self.flow_condition_mode == "latent_explicit":
+                print(
+                    "Latent motion phi fusers disabled because image recon guidance is off"
+                )
             print(
                 f"Image recon guidance enabled: {self.image_recon_loss_weight > 0.0}, "
                 f"type={self.image_recon_loss_type}, weight={self.image_recon_loss_weight:.3f}"
@@ -253,6 +259,12 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
                         and phi_next_list is not None
                         and self.latent_motion_phi_fusers is not None
                     ):
+                        if not (
+                            len(phi_prev_list) == len(phi_next_list) == len(self.latent_motion_phi_fusers)
+                        ):
+                            raise RuntimeError(
+                                "Latent motion phi fuser count does not match conditioning feature levels"
+                            )
                         phi_prev_out = []
                         phi_next_out = []
                         for prev_feat, next_feat, phi_fuser in zip(
@@ -497,4 +509,3 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             scheduler = [{"scheduler": LambdaLR(opt, lr_lambda=scheduler.schedule), "interval": "step", "frequency": 1}]
             return [opt], scheduler
         return opt
-

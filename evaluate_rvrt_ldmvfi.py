@@ -32,6 +32,14 @@ def restore_flow_guidance_metadata(ldm_config, ckpt_path):
         params.flow_raft_variant = metadata["flow_raft_variant"]
     if "flow_raft_ckpt" in metadata:
         params.flow_raft_ckpt = metadata["flow_raft_ckpt"]
+    if "latent_motion_hidden_channels" in metadata:
+        params.latent_motion_hidden_channels = int(metadata["latent_motion_hidden_channels"])
+    if "latent_motion_zero_init_last" in metadata:
+        params.latent_motion_zero_init_last = bool(metadata["latent_motion_zero_init_last"])
+    if "image_recon_loss_weight" in metadata:
+        params.image_recon_loss_weight = float(metadata["image_recon_loss_weight"])
+    if "image_recon_loss_type" in metadata:
+        params.image_recon_loss_type = metadata["image_recon_loss_type"]
 
 
 def infer_lora_rank_from_checkpoint(ckpt_path):

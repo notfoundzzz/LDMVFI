@@ -86,11 +86,11 @@ class RVRTLDMVFIPipeline:
         if key.startswith("model_ema.") and not self.use_ema:
             return True
         if key == "flow_condition_gate":
-            return True
+            return getattr(self.model, "flow_condition_gate", None) is None
         if key.startswith("latent_motion_encoder."):
-            return True
+            return getattr(self.model, "latent_motion_encoder", None) is None
         if key.startswith("latent_motion_phi_fusers."):
-            return True
+            return getattr(self.model, "latent_motion_phi_fusers", None) is None
         return False
 
     def _build_eval_frontend(self, sr_mode, scale, rvrt_root, rvrt_task, rvrt_ckpt, tile, tile_overlap):
@@ -198,4 +198,3 @@ class RVRTLDMVFIPipeline:
                 latent = latent[0]
             out = self.model.decode_first_stage(latent, xc, phi_prev_list, phi_next_list)
         return torch.clamp(out, min=-1.0, max=1.0), prev_sr, next_sr
-
