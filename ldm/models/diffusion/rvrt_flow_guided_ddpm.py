@@ -87,7 +87,6 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
                 self.cond_latent_channels * 2,
                 kernel_size=1,
             )
-            #! \brief zero-init residual gate 璁?flow 鍒嗘敮鍒濆鏃朵弗鏍肩瓑浠蜂簬 baseline 鏉′欢鍒嗗竷銆?
             torch.nn.init.zeros_(self.flow_condition_fuser.weight)
             torch.nn.init.zeros_(self.flow_condition_fuser.bias)
             self.flow_condition_gate = torch.nn.Parameter(torch.zeros(1))
@@ -428,7 +427,6 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         if self.image_recon_loss_type == "l1":
             return F.l1_loss(pred_image, target_image)
         if self.image_recon_loss_type == "charbonnier":
-            #! \brief Charbonnier 濮ｆ棁绶濋柅鍌氭値瑜版挸澧犻柌宥呯紦缁撅附娼敍灞筋嚠鏉堝啫銇囬崓蹇曠鐠囶垰妯婇弴瀵盖旂€规哎鈧?
             diff = pred_image - target_image
             eps = 1e-6
             return torch.mean(torch.sqrt(diff * diff + eps * eps))
@@ -470,8 +468,6 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         loss += self.original_elbo_weight * loss_vlb
 
         if self.image_recon_loss_weight > 0.0 and x_image is not None and xc is not None:
-            #! \brief 鍦ㄥ浘鍍忕┖闂村鍔犻噸寤虹害鏉燂紝浣胯缁冩柟鍚戞洿璐磋繎 PSNR/SSIM銆?
-            #! \example 褰撴墿鏁ｆ崯澶辩户缁笅闄嶄絾璇勬祴鎸囨爣骞冲彴鏃讹紝鍙敤璇ラ項绾︽潫杈撳嚭鏇存帴杩?GT銆?
             pred_image = self.decode_first_stage(pred_x0, xc, phi_prev_list, phi_next_list)
             recon_loss = self._compute_image_recon_loss(pred_image, x_image)
             loss_dict.update({f"{prefix}/loss_recon": recon_loss})

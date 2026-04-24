@@ -54,9 +54,6 @@ class RVRTLDMVFIPipeline:
                 f"First keys: {unexpected[:10]}"
             )
         if unexpected and not self.strict_checkpoint:
-            #! \brief 鍏佽鍦ㄤ汉宸ュ垏鎹?flow condition mode 鏃跺鐢ㄦ棫 checkpoint銆?
-            #! \example explicit 璁粌寰楀埌鐨?ckpt 涓彲鑳藉寘鍚?flow_condition_fuser.*锛?
-            #!          浣?aligned_input 鎺ㄧ悊涓嶅啀瀹炰緥鍖栬妯″潡锛屾鏃跺拷鐣ュ浣欏弬鏁板嵆鍙€?
             print(
                 "Ignoring unexpected checkpoint keys because strict checkpoint loading is disabled. "
                 f"First keys: {unexpected[:10]}"
