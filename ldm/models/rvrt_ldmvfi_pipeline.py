@@ -13,7 +13,6 @@ from ldm.util import instantiate_from_config
 
 
 class RVRTLDMVFIPipeline:
-    """瀹夊叏璇勬祴 stitched RVRT + LDMVFI 娴佹按绾裤€?""
 
     def __init__(
         self,

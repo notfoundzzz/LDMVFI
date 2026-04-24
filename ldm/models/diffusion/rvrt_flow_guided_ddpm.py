@@ -17,7 +17,6 @@ def _is_rank_zero(module):
 
 
 class _LatentMotionResidualBlock(torch.nn.Module):
-    """@brief 杞婚噺娈嬪樊鍧楋紝鐢ㄤ簬澧炲己 latent motion encoder 鐨勫眬閮ㄥ缓妯¤兘鍔涖€?    @example 杈撳叆杈撳嚭閫氶亾淇濇寔涓嶅彉锛岄€傚悎浣滀负灏忓瀷 motion tower 鐨勪腑闂村眰銆?    """
 
     def __init__(self, channels):
         super().__init__()
@@ -33,7 +32,6 @@ class _LatentMotionResidualBlock(torch.nn.Module):
 
 
 class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
-    """绾厜娴佸紩瀵艰缁冪被銆?""
 
     def __init__(
         self,
@@ -149,7 +147,6 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             )
 
     def _build_latent_motion_encoder(self):
-        """@brief 鏋勯€犲寮虹増 latent motion encoder锛屽皢鍙屽悜鍏夋祦涓庡箙鍊肩紪鐮佸埌鏉′欢 latent 绌洪棿銆?        @example 杈撳叆 `B x 6 x H x W` 鐨勫綊涓€鍖?motion tensor锛岃緭鍑?        `B x cond_latent_channels x H x W` 鐨?motion latent feature銆?        """
         hidden = self.latent_motion_hidden_channels
         encoder = torch.nn.Sequential(
             torch.nn.Conv2d(6, hidden, kernel_size=3, padding=1),
@@ -166,7 +163,6 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         return encoder
 
     def _build_latent_motion_phi_fusers(self):
-        """@brief 涓哄悇灞?`phi_prev_list / phi_next_list` 鏋勯€?zero-init 1x1 motion fuser銆?        @example 鑻?encoder 鍏辨湁 5 涓昂搴︼紝鍒欒繑鍥?5 涓?`1x1 Conv`锛?        灏?`cond_latent_channels` 鏄犲皠鍒板搴?`phi` 閫氶亾鏁般€?        """
         encoder = getattr(self.cond_stage_model, "encoder", None)
         down_modules = getattr(encoder, "down", None)
         if down_modules is None:
@@ -209,7 +205,6 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
 
     @torch.no_grad()
     def _super_resolve_neighbors(self, batch, bs=None):
-        """LR 閭诲抚鍏堝仛 SR銆?""
         prev_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_prev_key).to(self.device)
         next_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_next_key).to(self.device)
         if bs is not None:
@@ -236,7 +231,6 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         )
 
     def get_learned_conditioning(self, c):
-        """缂栫爜鏉′欢銆?""
         phi_prev_list, phi_next_list = None, None
         if isinstance(c, dict) and self.cond_prev_key in c.keys():
             c_prev, phi_prev_list = self.cond_stage_model.encode(c[self.cond_prev_key], ret_feature=True)
