@@ -39,6 +39,8 @@ FLOW_CONDITION_MODE="${FLOW_CONDITION_MODE:-}"
 FLOW_BACKEND="${FLOW_BACKEND:-}"
 FLOW_RAFT_VARIANT="${FLOW_RAFT_VARIANT:-}"
 FLOW_RAFT_CKPT="${FLOW_RAFT_CKPT:-}"
+FLOW_GATE_INIT="${FLOW_GATE_INIT:-}"
+MOTION_LR_SCALE="${MOTION_LR_SCALE:-}"
 IMAGE_RECON_LOSS_WEIGHT="${IMAGE_RECON_LOSS_WEIGHT:-}"
 IMAGE_RECON_LOSS_TYPE="${IMAGE_RECON_LOSS_TYPE:-}"
 
@@ -79,6 +81,8 @@ echo "flow_condition_mode=${FLOW_CONDITION_MODE:-default}"
 echo "flow_backend=${FLOW_BACKEND:-default}"
 echo "flow_raft_variant=${FLOW_RAFT_VARIANT:-default}"
 echo "flow_raft_ckpt=${FLOW_RAFT_CKPT:-default}"
+echo "flow_gate_init=${FLOW_GATE_INIT:-default}"
+echo "motion_lr_scale=${MOTION_LR_SCALE:-default}"
 echo "image_recon_loss_weight=${IMAGE_RECON_LOSS_WEIGHT:-default}"
 echo "image_recon_loss_type=${IMAGE_RECON_LOSS_TYPE:-default}"
 
@@ -133,6 +137,12 @@ if [[ -n "$FLOW_RAFT_VARIANT" ]]; then
 fi
 if [[ -n "$FLOW_RAFT_CKPT" ]]; then
   CMD+=(model.params.flow_raft_ckpt="$FLOW_RAFT_CKPT")
+fi
+if [[ -n "$FLOW_GATE_INIT" ]]; then
+  CMD+=(model.params.flow_gate_init="$FLOW_GATE_INIT")
+fi
+if [[ -n "$MOTION_LR_SCALE" ]]; then
+  CMD+=(model.params.motion_lr_scale="$MOTION_LR_SCALE")
 fi
 if [[ -n "$IMAGE_RECON_LOSS_WEIGHT" ]]; then
   CMD+=(model.params.image_recon_loss_weight="$IMAGE_RECON_LOSS_WEIGHT")

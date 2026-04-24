@@ -53,6 +53,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         flow_raft_ckpt=None,
         latent_motion_hidden_channels=32,
         latent_motion_zero_init_last=True,
+        flow_gate_init=1.0e-3,
+        motion_lr_scale=5.0,
         image_recon_loss_weight=0.0,
         image_recon_loss_type="charbonnier",
         *args,
@@ -72,6 +74,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         self.flow_raft_ckpt = flow_raft_ckpt
         self.latent_motion_hidden_channels = int(latent_motion_hidden_channels)
         self.latent_motion_zero_init_last = bool(latent_motion_zero_init_last)
+        self.flow_gate_init = float(flow_gate_init)
+        self.motion_lr_scale = float(motion_lr_scale)
         self.image_recon_loss_weight = float(image_recon_loss_weight)
         self.image_recon_loss_type = str(image_recon_loss_type)
         self.cond_latent_channels = int(getattr(self.cond_stage_model, "embed_dim", self.channels))
@@ -90,7 +94,12 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
                 self.cond_latent_channels * 2,
                 kernel_size=1,
             )
-            self.flow_condition_gate = torch.nn.Parameter(torch.zeros(1))
+            self.flow_condition_gate = torch.nn.Parameter(
+                torch.full(
+                    (1, self.cond_latent_channels * 2, 1, 1),
+                    self.flow_gate_init,
+                )
+            )
         if self.use_flow_guidance and self.flow_condition_mode == "latent_explicit":
             self.latent_motion_encoder = self._build_latent_motion_encoder()
             if self.use_latent_motion_phi_fusers:
@@ -134,13 +143,18 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
                 f"mode={self.flow_condition_mode}, backend={self.flow_backend}, raft_variant={self.flow_raft_variant}"
             )
             if self.flow_condition_gate is not None:
-                print(f"Flow condition gate init: {float(self.flow_condition_gate.detach().item()):.3f}")
+                gate_init_mean = float(self.flow_condition_gate.detach().mean().item())
+                print(
+                    f"Flow condition gate init: {gate_init_mean:.6f}, "
+                    f"shape={tuple(self.flow_condition_gate.shape)}"
+                )
             if self.latent_motion_encoder is not None:
                 print(
                     "Latent motion encoder enabled: "
                     f"hidden={self.latent_motion_hidden_channels}, "
                     f"zero_init_last={self.latent_motion_zero_init_last}"
                 )
+                print(f"Motion branch lr scale: {self.motion_lr_scale:.2f}")
             if self.latent_motion_phi_fusers is not None:
                 print(f"Latent motion phi fusers enabled: levels={len(self.latent_motion_phi_fusers)}")
             elif self.flow_condition_mode == "latent_explicit":
@@ -200,7 +214,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             else len(self.latent_motion_phi_fusers),
             "flow_condition_gate_init": None
             if self.flow_condition_gate is None
-            else float(self.flow_condition_gate.detach().item()),
+            else float(self.flow_condition_gate.detach().mean().item()),
+            "motion_lr_scale": self.motion_lr_scale,
             "image_recon_loss_weight": self.image_recon_loss_weight,
             "image_recon_loss_type": self.image_recon_loss_type,
         }
@@ -283,8 +298,9 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
                                 align_corners=False,
                             )
                             motion_feat = phi_fuser(motion_feat)
-                            phi_prev_out.append(prev_feat + self.flow_condition_gate * mix * motion_feat)
-                            phi_next_out.append(next_feat + self.flow_condition_gate * mix * motion_feat)
+                            phi_gate = self.flow_condition_gate.mean(dim=1, keepdim=True)
+                            phi_prev_out.append(prev_feat + phi_gate * mix * motion_feat)
+                            phi_next_out.append(next_feat + phi_gate * mix * motion_feat)
                         phi_prev_list = phi_prev_out
                         phi_next_list = phi_next_out
                 else:
@@ -470,7 +486,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         loss_vlb = (self.lvlb_weights[t] * loss_vlb).mean()
         loss_dict.update({f"{prefix}/loss_vlb": loss_vlb})
         if self.flow_condition_gate is not None:
-            loss_dict.update({f"{prefix}/flow_condition_gate": self.flow_condition_gate.detach()})
+            loss_dict.update({f"{prefix}/flow_condition_gate": self.flow_condition_gate.detach().mean()})
         loss += self.original_elbo_weight * loss_vlb
 
         if self.image_recon_loss_weight > 0.0 and x_image is not None and xc is not None:
@@ -483,25 +499,33 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         return loss, loss_dict
 
     def configure_optimizers(self):
-        params = [p for p in self.model.parameters() if p.requires_grad]
+        diffusion_params = [p for p in self.model.parameters() if p.requires_grad]
+        motion_params = []
         if self.flow_condition_fuser is not None:
-            params.extend(p for p in self.flow_condition_fuser.parameters() if p.requires_grad)
+            motion_params.extend(p for p in self.flow_condition_fuser.parameters() if p.requires_grad)
         if self.latent_motion_encoder is not None:
-            params.extend(p for p in self.latent_motion_encoder.parameters() if p.requires_grad)
+            motion_params.extend(p for p in self.latent_motion_encoder.parameters() if p.requires_grad)
         if self.latent_motion_phi_fusers is not None:
-            params.extend(p for p in self.latent_motion_phi_fusers.parameters() if p.requires_grad)
+            motion_params.extend(p for p in self.latent_motion_phi_fusers.parameters() if p.requires_grad)
         if self.flow_condition_gate is not None and self.flow_condition_gate.requires_grad:
-            params.append(self.flow_condition_gate)
-        if not params:
+            motion_params.append(self.flow_condition_gate)
+        if not diffusion_params and not motion_params:
             raise RuntimeError("No trainable diffusion parameters found")
+        param_groups = []
+        if diffusion_params:
+            param_groups.append({"params": diffusion_params, "lr": self.learning_rate})
+        if motion_params:
+            param_groups.append({"params": motion_params, "lr": self.learning_rate * self.motion_lr_scale})
         if self.learn_logvar:
-            params.append(self.logvar)
-        opt = torch.optim.AdamW(params, lr=self.learning_rate)
+            param_groups.append({"params": [self.logvar], "lr": self.learning_rate})
+        opt = torch.optim.AdamW(param_groups, lr=self.learning_rate)
         if _is_rank_zero(self):
-            if self.flow_condition_fuser is not None and self.latent_motion_encoder is not None:
-                print(f"Optimizer groups: diffusion+flow_fuser+motion_encoder+phi_fuser lr={self.learning_rate:.2e}")
-            elif self.flow_condition_fuser is not None:
-                print(f"Optimizer groups: diffusion+flow_fuser lr={self.learning_rate:.2e}")
+            if motion_params:
+                print(
+                    "Optimizer groups: "
+                    f"diffusion lr={self.learning_rate:.2e}, "
+                    f"motion lr={self.learning_rate * self.motion_lr_scale:.2e}"
+                )
             else:
                 print(f"Optimizer groups: diffusion lr={self.learning_rate:.2e}")
         if self.use_scheduler:
