@@ -1,4 +1,4 @@
-import os
+﻿import os
 
 import torch
 import torch.nn.functional as F
@@ -7,11 +7,9 @@ _RAFT_MODEL_CACHE = {}
 
 
 def _to_gray_uint8(frame: torch.Tensor):
-    """@brief 将单帧张量转为 Farneback 所需的灰度 `uint8` 图像。
-
-    @example 输入 `[-1,1]` 范围的 `3xH xW` 张量，输出 `H x W`
-    的 `uint8` 灰度图。
-    """
+    """@brief 灏嗗崟甯у紶閲忚浆涓?Farneback 鎵€闇€鐨勭伆搴?`uint8` 鍥惧儚銆?
+    @example 杈撳叆 `[-1,1]` 鑼冨洿鐨?`3xH xW` 寮犻噺锛岃緭鍑?`H x W`
+    鐨?`uint8` 鐏板害鍥俱€?    """
     frame_01 = torch.clamp((frame.detach().cpu().float() + 1.0) / 2.0, 0.0, 1.0)
     if frame_01.shape[0] == 3:
         gray = 0.299 * frame_01[0] + 0.587 * frame_01[1] + 0.114 * frame_01[2]
@@ -21,14 +19,14 @@ def _to_gray_uint8(frame: torch.Tensor):
 
 
 def _normalize_raft_frames(frame_batch: torch.Tensor):
-    """@brief 将输入帧转换为 RAFT 更常见的 `[-1,1]` 浮点输入格式。"""
+    """@brief 灏嗚緭鍏ュ抚杞崲涓?RAFT 鏇村父瑙佺殑 `[-1,1]` 娴偣杈撳叆鏍煎紡銆?""
     if frame_batch.min().item() < -0.5:
         return frame_batch.clamp(-1.0, 1.0)
     return (frame_batch * 2.0 - 1.0).clamp(-1.0, 1.0)
 
 
 def _pad_to_multiple_of_8(frame_batch: torch.Tensor):
-    """@brief 将输入 padding 到 8 的倍数，满足 RAFT 下采样约束。"""
+    """@brief 灏嗚緭鍏?padding 鍒?8 鐨勫€嶆暟锛屾弧瓒?RAFT 涓嬮噰鏍风害鏉熴€?""
     _, _, h, w = frame_batch.shape
     pad_h = (8 - h % 8) % 8
     pad_w = (8 - w % 8) % 8
@@ -63,11 +61,9 @@ def _build_raft_model(variant: str, ckpt_path: str, device: torch.device):
         raise FileNotFoundError(f"RAFT checkpoint not found: {ckpt_path}")
 
     def _create_raft(constructor):
-        """@brief 兼容新旧 torchvision 接口创建 RAFT 模型。
-
-        @example 新版通常支持 `weights=None`，旧版可能只接受
-        `pretrained=False` 或完全无参构造，因此这里按顺序回退。
-        """
+        """@brief 鍏煎鏂版棫 torchvision 鎺ュ彛鍒涘缓 RAFT 妯″瀷銆?
+        @example 鏂扮増閫氬父鏀寔 `weights=None`锛屾棫鐗堝彲鑳藉彧鎺ュ彈
+        `pretrained=False` 鎴栧畬鍏ㄦ棤鍙傛瀯閫狅紝鍥犳杩欓噷鎸夐『搴忓洖閫€銆?        """
         build_attempts = (
             lambda: constructor(weights=None, progress=False),
             lambda: constructor(pretrained=False, progress=False),
@@ -107,11 +103,8 @@ def _build_raft_model(variant: str, ckpt_path: str, device: torch.device):
 
 
 def _estimate_bidirectional_flow_farneback(prev_batch: torch.Tensor, next_batch: torch.Tensor):
-    """@brief 使用 OpenCV Farneback 估计双向稠密光流。
-
-    @example 对一对 LR 邻帧估计 `prev->next` 和 `next->prev` 光流，
-    后续再上采样到目标尺度以生成中间时刻先验。
-    """
+    """@brief 浣跨敤 OpenCV Farneback 浼拌鍙屽悜绋犲瘑鍏夋祦銆?
+    @example 瀵逛竴瀵?LR 閭诲抚浼拌 `prev->next` 鍜?`next->prev` 鍏夋祦锛?    鍚庣画鍐嶄笂閲囨牱鍒扮洰鏍囧昂搴︿互鐢熸垚涓棿鏃跺埢鍏堥獙銆?    """
     try:
         import cv2
     except ImportError as exc:
@@ -136,11 +129,9 @@ def _estimate_bidirectional_flow_raft(
     variant: str,
     ckpt_path: str,
 ):
-    """@brief 使用本地 RAFT 权重估计双向稠密光流。
-
-    @example 指定 `variant=large` 且传入本地 `raft-large.pth` 后，
-    可得到比 Farneback 更强的 `prev->next` / `next->prev` 光流先验。
-    """
+    """@brief 浣跨敤鏈湴 RAFT 鏉冮噸浼拌鍙屽悜绋犲瘑鍏夋祦銆?
+    @example 鎸囧畾 `variant=large` 涓斾紶鍏ユ湰鍦?`raft-large.pth` 鍚庯紝
+    鍙緱鍒版瘮 Farneback 鏇村己鐨?`prev->next` / `next->prev` 鍏夋祦鍏堥獙銆?    """
     device = prev_batch.device
     model = _build_raft_model(variant=variant, ckpt_path=ckpt_path, device=device)
 
@@ -163,7 +154,7 @@ def _estimate_bidirectional_flow(
     raft_variant: str = "large",
     raft_ckpt: str = None,
 ):
-    """@brief 根据配置选择 Farneback 或 RAFT 作为光流后端。"""
+    """@brief 鏍规嵁閰嶇疆閫夋嫨 Farneback 鎴?RAFT 浣滀负鍏夋祦鍚庣銆?""
     if backend == "farneback":
         return _estimate_bidirectional_flow_farneback(prev_batch, next_batch)
     if backend == "raft":
@@ -190,11 +181,9 @@ def _resize_flow(flow: torch.Tensor, target_hw):
 
 
 def _warp_with_half_flow(frame: torch.Tensor, flow: torch.Tensor):
-    """@brief 将帧按半步光流 backward warp 到中间时刻。
-
-    @example 对 `prev->next` 光流取 `0.5` 倍，可近似生成 `t=0.5`
-    时刻对应的对齐结果。
-    """
+    """@brief 灏嗗抚鎸夊崐姝ュ厜娴?backward warp 鍒颁腑闂存椂鍒汇€?
+    @example 瀵?`prev->next` 鍏夋祦鍙?`0.5` 鍊嶏紝鍙繎浼肩敓鎴?`t=0.5`
+    鏃跺埢瀵瑰簲鐨勫榻愮粨鏋溿€?    """
     b, _, h, w = frame.shape
     device = frame.device
     dtype = frame.dtype
@@ -221,11 +210,8 @@ def build_flow_aligned_input_pair(
     raft_variant: str = "large",
     raft_ckpt: str = None,
 ):
-    """@brief 构造对齐到中间时刻的前后条件帧。
-    @example
-    使用双向光流将 `prev_target_frame / next_target_frame` 分别 warp 到
-    `t=0.5`，再直接作为生成模型的主条件输入。
-    """
+    """@brief 鏋勯€犲榻愬埌涓棿鏃跺埢鐨勫墠鍚庢潯浠跺抚銆?    @example
+    浣跨敤鍙屽悜鍏夋祦灏?`prev_target_frame / next_target_frame` 鍒嗗埆 warp 鍒?    `t=0.5`锛屽啀鐩存帴浣滀负鐢熸垚妯″瀷鐨勪富鏉′欢杈撳叆銆?    """
     if backend == "raft":
         flow_prev_to_next, flow_next_to_prev = _estimate_bidirectional_flow(
             prev_target_frame,
@@ -258,12 +244,9 @@ def build_flow_guided_middle_prior(
     raft_variant: str = "large",
     raft_ckpt: str = None,
 ):
-    """@brief 构造光流引导的中间时刻先验帧。
-
-    @example 当 `backend=farneback` 时，先在较低分辨率邻帧上估计光流，
-    再上采样到目标尺度；当 `backend=raft` 时，直接在目标尺度邻帧上估计
-    光流，以避免低分辨率输入导致的数值不稳定，再对目标帧做半步 warp。
-    """
+    """@brief 鏋勯€犲厜娴佸紩瀵肩殑涓棿鏃跺埢鍏堥獙甯с€?
+    @example 褰?`backend=farneback` 鏃讹紝鍏堝湪杈冧綆鍒嗚鲸鐜囬偦甯т笂浼拌鍏夋祦锛?    鍐嶄笂閲囨牱鍒扮洰鏍囧昂搴︼紱褰?`backend=raft` 鏃讹紝鐩存帴鍦ㄧ洰鏍囧昂搴﹂偦甯т笂浼拌
+    鍏夋祦锛屼互閬垮厤浣庡垎杈ㄧ巼杈撳叆瀵艰嚧鐨勬暟鍊间笉绋冲畾锛屽啀瀵圭洰鏍囧抚鍋氬崐姝?warp銆?    """
     warped_prev, warped_next = build_flow_aligned_input_pair(
         prev_flow_frame,
         next_flow_frame,
@@ -286,10 +269,7 @@ def build_bidirectional_flow_tensor(
     raft_variant: str = "large",
     raft_ckpt: str = None,
 ):
-    """@brief 构造归一化后的双向光流张量与幅值通道，供 latent motion encoder 直接编码。
-    @example 输出形状为 `B x 6 x H x W`，其中前 2 通道为 `prev->next`，
-    中间 2 通道为 `next->prev`，最后 2 通道为对应的光流幅值图。
-    """
+    """@brief 鏋勯€犲綊涓€鍖栧悗鐨勫弻鍚戝厜娴佸紶閲忎笌骞呭€奸€氶亾锛屼緵 latent motion encoder 鐩存帴缂栫爜銆?    @example 杈撳嚭褰㈢姸涓?`B x 6 x H x W`锛屽叾涓墠 2 閫氶亾涓?`prev->next`锛?    涓棿 2 閫氶亾涓?`next->prev`锛屾渶鍚?2 閫氶亾涓哄搴旂殑鍏夋祦骞呭€煎浘銆?    """
     if backend == "raft":
         flow_prev_to_next, flow_next_to_prev = _estimate_bidirectional_flow(
             prev_target_frame,
@@ -322,3 +302,4 @@ def build_bidirectional_flow_tensor(
     mag_prev_to_next = torch.sqrt(torch.sum(flow_prev_to_next * flow_prev_to_next, dim=1, keepdim=True))
     mag_next_to_prev = torch.sqrt(torch.sum(flow_next_to_prev * flow_next_to_prev, dim=1, keepdim=True))
     return torch.cat([flow_prev_to_next, flow_next_to_prev, mag_prev_to_next, mag_next_to_prev], dim=1)
+
