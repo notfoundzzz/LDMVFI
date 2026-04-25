@@ -14,18 +14,19 @@ model:
     cond_stage_trainable: False
     concat_mode: True
     monitor: val/loss_simple_ema
+    sr_frontend_mode: rvrt
     rvrt_root: /data/Shenzhen/zhahongli/RVRT
     rvrt_task: 002_RVRT_videosr_bi_Vimeo_14frames
     rvrt_ckpt: /data/Shenzhen/zhahongli/RVRT/model_zoo/rvrt/002_RVRT_videosr_bi_Vimeo_14frames.pth
-    use_flow_guidance: True
+    use_flow_guidance: False
     flow_guidance_strength: 0.25
-    flow_condition_mode: aligned_input
-    flow_backend: farneback
+    flow_condition_mode: latent_explicit
+    flow_backend: raft
     flow_raft_variant: large
     flow_raft_ckpt: null
     latent_motion_hidden_channels: 32
     latent_motion_zero_init_last: true
-    image_recon_loss_weight: 0.1
+    image_recon_loss_weight: 0.0
     image_recon_loss_type: charbonnier
     unet_config:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel

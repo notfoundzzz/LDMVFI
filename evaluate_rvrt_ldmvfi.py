@@ -169,6 +169,7 @@ def main():
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     ldm_config = OmegaConf.load(args.ldm_config)
     restore_flow_guidance_metadata(ldm_config, args.ldm_ckpt)
+    ldm_config.model.params.sr_frontend_mode = args.sr_mode
     if args.use_flow_guidance is not None:
         ldm_config.model.params.use_flow_guidance = bool(args.use_flow_guidance)
     if args.flow_backend:
