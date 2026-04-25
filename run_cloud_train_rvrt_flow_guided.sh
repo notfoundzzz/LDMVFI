@@ -42,6 +42,10 @@ FLOW_CONDITION_MODE="${FLOW_CONDITION_MODE:-}"
 FLOW_BACKEND="${FLOW_BACKEND:-}"
 FLOW_RAFT_VARIANT="${FLOW_RAFT_VARIANT:-}"
 FLOW_RAFT_CKPT="${FLOW_RAFT_CKPT:-}"
+USE_CONDITION_ADAPTER="${USE_CONDITION_ADAPTER:-}"
+CONDITION_ADAPTER_HIDDEN_CHANNELS="${CONDITION_ADAPTER_HIDDEN_CHANNELS:-}"
+CONDITION_ADAPTER_ZERO_INIT_LAST="${CONDITION_ADAPTER_ZERO_INIT_LAST:-}"
+CONDITION_ADAPTER_LR_SCALE="${CONDITION_ADAPTER_LR_SCALE:-}"
 FLOW_GATE_INIT="${FLOW_GATE_INIT:-}"
 MOTION_LR_SCALE="${MOTION_LR_SCALE:-}"
 IMAGE_RECON_LOSS_WEIGHT="${IMAGE_RECON_LOSS_WEIGHT:-}"
@@ -87,6 +91,10 @@ echo "flow_condition_mode=${FLOW_CONDITION_MODE:-default}"
 echo "flow_backend=${FLOW_BACKEND:-default}"
 echo "flow_raft_variant=${FLOW_RAFT_VARIANT:-default}"
 echo "flow_raft_ckpt=${FLOW_RAFT_CKPT:-default}"
+echo "use_condition_adapter=${USE_CONDITION_ADAPTER:-default}"
+echo "condition_adapter_hidden_channels=${CONDITION_ADAPTER_HIDDEN_CHANNELS:-default}"
+echo "condition_adapter_zero_init_last=${CONDITION_ADAPTER_ZERO_INIT_LAST:-default}"
+echo "condition_adapter_lr_scale=${CONDITION_ADAPTER_LR_SCALE:-default}"
 echo "flow_gate_init=${FLOW_GATE_INIT:-default}"
 echo "motion_lr_scale=${MOTION_LR_SCALE:-default}"
 echo "image_recon_loss_weight=${IMAGE_RECON_LOSS_WEIGHT:-default}"
@@ -153,6 +161,18 @@ if [[ -n "$FLOW_RAFT_VARIANT" ]]; then
 fi
 if [[ -n "$FLOW_RAFT_CKPT" ]]; then
   CMD+=(model.params.flow_raft_ckpt="$FLOW_RAFT_CKPT")
+fi
+if [[ -n "$USE_CONDITION_ADAPTER" ]]; then
+  CMD+=(model.params.use_condition_adapter="$USE_CONDITION_ADAPTER")
+fi
+if [[ -n "$CONDITION_ADAPTER_HIDDEN_CHANNELS" ]]; then
+  CMD+=(model.params.condition_adapter_hidden_channels="$CONDITION_ADAPTER_HIDDEN_CHANNELS")
+fi
+if [[ -n "$CONDITION_ADAPTER_ZERO_INIT_LAST" ]]; then
+  CMD+=(model.params.condition_adapter_zero_init_last="$CONDITION_ADAPTER_ZERO_INIT_LAST")
+fi
+if [[ -n "$CONDITION_ADAPTER_LR_SCALE" ]]; then
+  CMD+=(model.params.condition_adapter_lr_scale="$CONDITION_ADAPTER_LR_SCALE")
 fi
 if [[ -n "$FLOW_GATE_INIT" ]]; then
   CMD+=(model.params.flow_gate_init="$FLOW_GATE_INIT")

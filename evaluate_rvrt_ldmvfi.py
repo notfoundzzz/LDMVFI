@@ -36,6 +36,14 @@ def restore_flow_guidance_metadata(ldm_config, ckpt_path):
         params.latent_motion_hidden_channels = int(metadata["latent_motion_hidden_channels"])
     if "latent_motion_zero_init_last" in metadata:
         params.latent_motion_zero_init_last = bool(metadata["latent_motion_zero_init_last"])
+    if "use_condition_adapter" in metadata:
+        params.use_condition_adapter = bool(metadata["use_condition_adapter"])
+    if "condition_adapter_hidden_channels" in metadata:
+        params.condition_adapter_hidden_channels = int(metadata["condition_adapter_hidden_channels"])
+    if "condition_adapter_zero_init_last" in metadata:
+        params.condition_adapter_zero_init_last = bool(metadata["condition_adapter_zero_init_last"])
+    if "condition_adapter_lr_scale" in metadata:
+        params.condition_adapter_lr_scale = float(metadata["condition_adapter_lr_scale"])
     if "motion_lr_scale" in metadata:
         params.motion_lr_scale = float(metadata["motion_lr_scale"])
     if "image_recon_loss_weight" in metadata:

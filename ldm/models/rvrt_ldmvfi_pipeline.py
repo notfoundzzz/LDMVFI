@@ -87,6 +87,8 @@ class RVRTLDMVFIPipeline:
             return True
         if key == "flow_condition_gate":
             return getattr(self.model, "flow_condition_gate", None) is None
+        if key.startswith("condition_frame_adapter."):
+            return getattr(self.model, "condition_frame_adapter", None) is None
         if key.startswith("latent_motion_encoder."):
             return getattr(self.model, "latent_motion_encoder", None) is None
         if key.startswith("latent_motion_phi_fusers."):
@@ -121,7 +123,13 @@ class RVRTLDMVFIPipeline:
     def super_resolve_neighbors(self, prev_lr, next_lr):
         seq = torch.stack([prev_lr, next_lr], dim=1).to(self.device)
         out = self.sr_frontend(seq)
-        return out[:, 0], out[:, 1]
+        raw_prev_sr = torch.clamp(out[:, 0] * 2.0 - 1.0, min=-1.0, max=1.0)
+        raw_next_sr = torch.clamp(out[:, 1] * 2.0 - 1.0, min=-1.0, max=1.0)
+        if hasattr(self.model, "_adapt_condition_frames"):
+            prev_sr, next_sr = self.model._adapt_condition_frames(raw_prev_sr, raw_next_sr)
+        else:
+            prev_sr, next_sr = raw_prev_sr, raw_next_sr
+        return raw_prev_sr, raw_next_sr, prev_sr, next_sr
 
     @torch.no_grad()
     def interpolate(self, prev_lr, next_lr, use_ddim=True, ddim_steps=200, ddim_eta=0.0, seed=None):
@@ -130,9 +138,7 @@ class RVRTLDMVFIPipeline:
 
         prev_01 = (prev_lr + 1.0) / 2.0
         next_01 = (next_lr + 1.0) / 2.0
-        prev_sr, next_sr = self.super_resolve_neighbors(prev_01, next_01)
-        prev_sr = torch.clamp(prev_sr * 2.0 - 1.0, min=-1.0, max=1.0)
-        next_sr = torch.clamp(next_sr * 2.0 - 1.0, min=-1.0, max=1.0)
+        raw_prev_sr, raw_next_sr, prev_sr, next_sr = self.super_resolve_neighbors(prev_01, next_01)
 
         scope = self.model.ema_scope() if self.use_ema and hasattr(self.model, "ema_scope") else nullcontext()
         with scope:
@@ -143,12 +149,14 @@ class RVRTLDMVFIPipeline:
                     aligned_prev, aligned_next = build_flow_aligned_input_pair(
                         prev_lr,
                         next_lr,
-                        prev_sr,
-                        next_sr,
+                        raw_prev_sr,
+                        raw_next_sr,
                         backend=getattr(self.model, "flow_backend", "farneback"),
                         raft_variant=getattr(self.model, "flow_raft_variant", "large"),
                         raft_ckpt=getattr(self.model, "flow_raft_ckpt", None),
                     )
+                    if hasattr(self.model, "_adapt_condition_frames"):
+                        aligned_prev, aligned_next = self.model._adapt_condition_frames(aligned_prev, aligned_next)
                     xc["prev_frame"] = aligned_prev
                     xc["next_frame"] = aligned_next
                     self.last_flow_prior = None
@@ -156,8 +164,8 @@ class RVRTLDMVFIPipeline:
                     xc[getattr(self.model, "cond_flow_key", "flow_prior")] = build_bidirectional_flow_tensor(
                         prev_lr,
                         next_lr,
-                        prev_sr,
-                        next_sr,
+                        raw_prev_sr,
+                        raw_next_sr,
                         backend=getattr(self.model, "flow_backend", "farneback"),
                         raft_variant=getattr(self.model, "flow_raft_variant", "large"),
                         raft_ckpt=getattr(self.model, "flow_raft_ckpt", None),
@@ -167,8 +175,8 @@ class RVRTLDMVFIPipeline:
                     self.last_flow_prior = build_flow_guided_middle_prior(
                         prev_lr,
                         next_lr,
-                        prev_sr,
-                        next_sr,
+                        raw_prev_sr,
+                        raw_next_sr,
                         backend=getattr(self.model, "flow_backend", "farneback"),
                         raft_variant=getattr(self.model, "flow_raft_variant", "large"),
                         raft_ckpt=getattr(self.model, "flow_raft_ckpt", None),
