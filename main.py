@@ -438,9 +438,10 @@ class ImageLogger(Callback):
 
     def on_validation_epoch_end(self, trainer, pl_module):
         if len(self.val_psnr_epoch) > 0:
-            epoch_psnr = torch.cat(self.val_psnr_epoch).mean().item()
-            pl_module.log_dict(
-                {'val/psnr': epoch_psnr},
+            epoch_psnr = torch.cat(self.val_psnr_epoch).mean()
+            pl_module.log(
+                'val/psnr',
+                epoch_psnr,
                 prog_bar=False,
                 logger=True,
                 on_step=False,
