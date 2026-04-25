@@ -2,6 +2,8 @@
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import LambdaLR
 
+from contextlib import nullcontext
+
 from ldm.models.diffusion.ddpm import LatentDiffusionVFI
 from ldm.models.flow_guidance import (
     build_bidirectional_flow_tensor,
@@ -32,6 +34,7 @@ class _LatentMotionResidualBlock(torch.nn.Module):
 
 
 class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
+    _ALLOWED_RVRT_TRAIN_MODES = ("frozen", "partial")
 
     def __init__(
         self,
@@ -40,6 +43,9 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         rvrt_ckpt=None,
         rvrt_tile=(0, 0, 0),
         rvrt_tile_overlap=(2, 20, 20),
+        rvrt_train_mode="frozen",
+        rvrt_train_patterns=None,
+        rvrt_lr=5.0e-6,
         lr_prev_key="prev_frame_lr",
         lr_next_key="next_frame_lr",
         cond_prev_key="prev_frame",
@@ -66,6 +72,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         self.cond_prev_key = cond_prev_key
         self.cond_next_key = cond_next_key
         self.cond_flow_key = cond_flow_key
+        self.rvrt_train_mode = self._normalize_rvrt_train_mode(rvrt_train_mode)
+        self.rvrt_lr = float(rvrt_lr)
         self.use_flow_guidance = bool(use_flow_guidance)
         self.flow_guidance_strength = float(flow_guidance_strength)
         self.flow_condition_mode = str(flow_condition_mode)
@@ -114,9 +122,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             tile=tuple(rvrt_tile),
             tile_overlap=tuple(rvrt_tile_overlap),
         )
-        self.rvrt_frontend.eval()
-        for param in self.rvrt_frontend.parameters():
-            param.requires_grad = False
+        self.rvrt_trainable_patterns = self._normalize_rvrt_train_patterns(rvrt_train_patterns)
+        self._configure_rvrt_training()
 
         for param in self.first_stage_model.parameters():
             param.requires_grad = False
@@ -134,9 +141,16 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             trainable += sum(p.numel() for p in self.latent_motion_phi_fusers.parameters() if p.requires_grad)
         if self.flow_condition_gate is not None and self.flow_condition_gate.requires_grad:
             trainable += self.flow_condition_gate.numel()
+        trainable += sum(p.numel() for p in self.rvrt_frontend.parameters() if p.requires_grad)
         if _is_rank_zero(self):
-            print(f"Full-tuning diffusion UNet with {trainable} trainable parameters")
-            print("RVRT frontend frozen")
+            print(f"Total trainable parameters: {trainable}")
+            if self._rvrt_requires_grad():
+                print(
+                    "RVRT frontend partial finetune active: "
+                    f"patterns={self.rvrt_trainable_patterns}, rvrt_lr={self.rvrt_lr:.2e}"
+                )
+            else:
+                print("RVRT frontend frozen")
             print("First-stage and cond-stage frozen")
             print(
                 f"Flow guidance enabled: {self.use_flow_guidance}, strength={self.flow_guidance_strength:.3f}, "
@@ -198,6 +212,59 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             fusers.append(fuser)
         return torch.nn.ModuleList(fusers)
 
+    def _normalize_rvrt_train_patterns(self, patterns):
+        if patterns is None:
+            return (
+                "conv_before_upsample",
+                "conv_up1",
+                "conv_up2",
+                "conv_hr",
+                "conv_last",
+            )
+        if isinstance(patterns, str):
+            patterns = [p.strip() for p in patterns.split(",")]
+        return tuple(p for p in patterns if p)
+
+    def _normalize_rvrt_train_mode(self, mode):
+        mode = str(mode).strip().lower()
+        if mode not in self._ALLOWED_RVRT_TRAIN_MODES:
+            raise ValueError(
+                f"Unsupported rvrt_train_mode: {mode}. "
+                f"Expected one of {self._ALLOWED_RVRT_TRAIN_MODES}."
+            )
+        return mode
+
+    def _rvrt_requires_grad(self):
+        return self.rvrt_train_mode != "frozen"
+
+    def _configure_rvrt_training(self):
+        for param in self.rvrt_frontend.parameters():
+            param.requires_grad = False
+
+        if not self._rvrt_requires_grad():
+            self.rvrt_frontend.eval()
+            return
+
+        trainable_names = []
+        for name, param in self.rvrt_frontend.named_parameters():
+            if any(pattern in name for pattern in self.rvrt_trainable_patterns):
+                param.requires_grad = True
+                trainable_names.append(name)
+
+        if not trainable_names:
+            raise RuntimeError(
+                "RVRT partial finetuning was requested, but no parameters matched "
+                f"patterns={self.rvrt_trainable_patterns}"
+            )
+
+        self.rvrt_frontend.train()
+        if _is_rank_zero(self):
+            preview = trainable_names[:10]
+            print(
+                f"RVRT frontend partial finetune enabled: {len(trainable_names)} params matched "
+                f"patterns={self.rvrt_trainable_patterns}. First names: {preview}"
+            )
+
     def on_save_checkpoint(self, checkpoint):
         super().on_save_checkpoint(checkpoint)
         checkpoint["rvrt_flow_guidance_metadata"] = {
@@ -218,13 +285,19 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             "motion_lr_scale": self.motion_lr_scale,
             "image_recon_loss_weight": self.image_recon_loss_weight,
             "image_recon_loss_type": self.image_recon_loss_type,
+            "rvrt_train_mode": self.rvrt_train_mode,
+            "rvrt_train_patterns": self.rvrt_trainable_patterns,
+            "rvrt_lr": self.rvrt_lr,
         }
 
     def on_fit_start(self):
         super().on_fit_start()
-        self.rvrt_frontend = self.rvrt_frontend.to(self.device).eval()
+        self.rvrt_frontend = self.rvrt_frontend.to(self.device)
+        if self._rvrt_requires_grad():
+            self.rvrt_frontend.train()
+        else:
+            self.rvrt_frontend.eval()
 
-    @torch.no_grad()
     def _super_resolve_neighbors(self, batch, bs=None):
         prev_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_prev_key).to(self.device)
         next_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_next_key).to(self.device)
@@ -235,7 +308,9 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         prev_01 = (prev_lr + 1.0) / 2.0
         next_01 = (next_lr + 1.0) / 2.0
         seq = torch.stack([prev_01, next_01], dim=1)
-        out = self.rvrt_frontend(seq)
+        grad_context = nullcontext() if self._rvrt_requires_grad() else torch.no_grad()
+        with grad_context:
+            out = self.rvrt_frontend(seq)
         prev_sr = torch.clamp(out[:, 0] * 2.0 - 1.0, min=-1.0, max=1.0)
         next_sr = torch.clamp(out[:, 1] * 2.0 - 1.0, min=-1.0, max=1.0)
         return prev_sr, next_sr
@@ -509,22 +584,38 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             motion_params.extend(p for p in self.latent_motion_phi_fusers.parameters() if p.requires_grad)
         if self.flow_condition_gate is not None and self.flow_condition_gate.requires_grad:
             motion_params.append(self.flow_condition_gate)
-        if not diffusion_params and not motion_params:
-            raise RuntimeError("No trainable diffusion parameters found")
+        rvrt_params = [p for p in self.rvrt_frontend.parameters() if p.requires_grad]
+        if not diffusion_params and not motion_params and not rvrt_params:
+            raise RuntimeError("No trainable parameters found")
         param_groups = []
         if diffusion_params:
             param_groups.append({"params": diffusion_params, "lr": self.learning_rate})
         if motion_params:
             param_groups.append({"params": motion_params, "lr": self.learning_rate * self.motion_lr_scale})
+        if rvrt_params:
+            param_groups.append({"params": rvrt_params, "lr": self.rvrt_lr})
         if self.learn_logvar:
             param_groups.append({"params": [self.logvar], "lr": self.learning_rate})
         opt = torch.optim.AdamW(param_groups, lr=self.learning_rate)
         if _is_rank_zero(self):
-            if motion_params:
+            if motion_params and rvrt_params:
+                print(
+                    "Optimizer groups: "
+                    f"diffusion lr={self.learning_rate:.2e}, "
+                    f"motion lr={self.learning_rate * self.motion_lr_scale:.2e}, "
+                    f"rvrt lr={self.rvrt_lr:.2e}"
+                )
+            elif motion_params:
                 print(
                     "Optimizer groups: "
                     f"diffusion lr={self.learning_rate:.2e}, "
                     f"motion lr={self.learning_rate * self.motion_lr_scale:.2e}"
+                )
+            elif rvrt_params:
+                print(
+                    "Optimizer groups: "
+                    f"diffusion lr={self.learning_rate:.2e}, "
+                    f"rvrt lr={self.rvrt_lr:.2e}"
                 )
             else:
                 print(f"Optimizer groups: diffusion lr={self.learning_rate:.2e}")

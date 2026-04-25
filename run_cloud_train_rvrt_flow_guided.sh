@@ -31,6 +31,9 @@ VQ_CKPT="${VQ_CKPT:-/data/Shenzhen/zhahongli/models/ldmvfi/vqflow-extracted.ckpt
 BASE_LDM_CKPT="${BASE_LDM_CKPT:-/data/Shenzhen/zhahongli/models/ldmvfi/ldmvfi-vqflow-f32-c256-concat_max.ckpt}"
 RVRT_ROOT="${RVRT_ROOT:-/data/Shenzhen/zhahongli/RVRT}"
 RVRT_CKPT="${RVRT_CKPT:-$RVRT_ROOT/model_zoo/rvrt/002_RVRT_videosr_bi_Vimeo_14frames.pth}"
+RVRT_TRAIN_MODE="${RVRT_TRAIN_MODE:-}"
+RVRT_TRAIN_PATTERNS="${RVRT_TRAIN_PATTERNS:-}"
+RVRT_LR="${RVRT_LR:-}"
 SAVE_TRAIN_IMAGES="${SAVE_TRAIN_IMAGES:-0}"
 MODEL_BASE_LR="${MODEL_BASE_LR:-}"
 USE_FLOW_GUIDANCE="${USE_FLOW_GUIDANCE:-1}"
@@ -73,6 +76,9 @@ echo "vq_ckpt=$VQ_CKPT"
 echo "base_ldm_ckpt=$BASE_LDM_CKPT"
 echo "rvrt_root=$RVRT_ROOT"
 echo "rvrt_ckpt=$RVRT_CKPT"
+echo "rvrt_train_mode=${RVRT_TRAIN_MODE:-default}"
+echo "rvrt_train_patterns=${RVRT_TRAIN_PATTERNS:-default}"
+echo "rvrt_lr=${RVRT_LR:-default}"
 echo "save_train_images=$SAVE_TRAIN_IMAGES"
 echo "model_base_lr=${MODEL_BASE_LR:-default}"
 echo "use_flow_guidance=$USE_FLOW_GUIDANCE"
@@ -125,6 +131,16 @@ CMD=(
   model.params.use_flow_guidance="$USE_FLOW_GUIDANCE"
   model.params.flow_guidance_strength="$FLOW_GUIDANCE_STRENGTH"
 )
+
+if [[ -n "$RVRT_TRAIN_MODE" ]]; then
+  CMD+=(model.params.rvrt_train_mode="$RVRT_TRAIN_MODE")
+fi
+if [[ -n "$RVRT_TRAIN_PATTERNS" ]]; then
+  CMD+=(model.params.rvrt_train_patterns="$RVRT_TRAIN_PATTERNS")
+fi
+if [[ -n "$RVRT_LR" ]]; then
+  CMD+=(model.params.rvrt_lr="$RVRT_LR")
+fi
 
 if [[ -n "$FLOW_CONDITION_MODE" ]]; then
   CMD+=(model.params.flow_condition_mode="$FLOW_CONDITION_MODE")
