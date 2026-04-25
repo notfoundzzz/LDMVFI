@@ -47,6 +47,7 @@ SEED="${SEED:-1234}"
 METRICS="${METRICS:-PSNR,SSIM}"
 USE_RAW_WEIGHTS="${USE_RAW_WEIGHTS:-0}"
 ALLOW_INCOMPLETE_CKPT="${ALLOW_INCOMPLETE_CKPT:-0}"
+USE_FLOW_GUIDANCE="${USE_FLOW_GUIDANCE:-}"
 FLOW_BACKEND="${FLOW_BACKEND:-}"
 FLOW_CONDITION_MODE="${FLOW_CONDITION_MODE:-}"
 FLOW_RAFT_VARIANT="${FLOW_RAFT_VARIANT:-}"
@@ -89,6 +90,7 @@ echo "seed=$SEED"
 echo "metrics=$METRICS"
 echo "use_raw_weights=$USE_RAW_WEIGHTS"
 echo "allow_incomplete_ckpt=$ALLOW_INCOMPLETE_CKPT"
+echo "use_flow_guidance=${USE_FLOW_GUIDANCE:-default}"
 echo "flow_condition_mode=${FLOW_CONDITION_MODE:-default}"
 echo "flow_backend=${FLOW_BACKEND:-default}"
 echo "flow_raft_variant=${FLOW_RAFT_VARIANT:-default}"
@@ -179,6 +181,9 @@ for SPLIT_NAME in "${SPLIT_ARRAY[@]}"; do
 
   if [[ "$ALLOW_INCOMPLETE_CKPT" == "1" || "$ALLOW_INCOMPLETE_CKPT" == "true" ]]; then
     CMD+=(--allow_incomplete_ckpt)
+  fi
+  if [[ -n "$USE_FLOW_GUIDANCE" ]]; then
+    CMD+=(--use_flow_guidance "$USE_FLOW_GUIDANCE")
   fi
   if [[ -n "$FLOW_BACKEND" ]]; then
     CMD+=(--flow_backend "$FLOW_BACKEND")

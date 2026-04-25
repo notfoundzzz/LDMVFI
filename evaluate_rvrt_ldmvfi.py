@@ -157,6 +157,7 @@ def main():
     parser.add_argument("--use_ema", dest="use_ema", action="store_true")
     parser.add_argument("--use_raw_weights", dest="use_ema", action="store_false")
     parser.add_argument("--allow_incomplete_ckpt", dest="strict_checkpoint", action="store_false")
+    parser.add_argument("--use_flow_guidance", type=int, choices=[0, 1], default=None)
     parser.add_argument("--flow_backend", default=None)
     parser.add_argument("--flow_condition_mode", default=None)
     parser.add_argument("--flow_raft_variant", default=None)
@@ -168,6 +169,8 @@ def main():
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     ldm_config = OmegaConf.load(args.ldm_config)
     restore_flow_guidance_metadata(ldm_config, args.ldm_ckpt)
+    if args.use_flow_guidance is not None:
+        ldm_config.model.params.use_flow_guidance = bool(args.use_flow_guidance)
     if args.flow_backend:
         ldm_config.model.params.flow_backend = args.flow_backend
     if args.flow_condition_mode:
