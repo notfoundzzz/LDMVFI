@@ -31,6 +31,7 @@ VQ_CKPT="${VQ_CKPT:-/data/Shenzhen/zhahongli/models/ldmvfi/vqflow-extracted.ckpt
 BASE_LDM_CKPT="${BASE_LDM_CKPT:-/data/Shenzhen/zhahongli/models/ldmvfi/ldmvfi-vqflow-f32-c256-concat_max.ckpt}"
 RVRT_ROOT="${RVRT_ROOT:-/data/Shenzhen/zhahongli/RVRT}"
 RVRT_CKPT="${RVRT_CKPT:-$RVRT_ROOT/model_zoo/rvrt/002_RVRT_videosr_bi_Vimeo_14frames.pth}"
+SR_FRONTEND_MODE="${SR_FRONTEND_MODE:-}"
 RVRT_TRAIN_MODE="${RVRT_TRAIN_MODE:-}"
 RVRT_TRAIN_PATTERNS="${RVRT_TRAIN_PATTERNS:-}"
 RVRT_LR="${RVRT_LR:-}"
@@ -59,6 +60,16 @@ if [[ -z "$BASE_LDM_CKPT" || ! -f "$BASE_LDM_CKPT" ]]; then
   echo "BASE_LDM_CKPT is required"
   exit 1
 fi
+if [[ "${SR_FRONTEND_MODE:-rvrt}" == "rvrt" ]]; then
+  if [[ -z "$RVRT_ROOT" || ! -d "$RVRT_ROOT" ]]; then
+    echo "RVRT_ROOT is required when SR_FRONTEND_MODE=rvrt"
+    exit 1
+  fi
+  if [[ -z "$RVRT_CKPT" || ! -f "$RVRT_CKPT" ]]; then
+    echo "RVRT_CKPT is required when SR_FRONTEND_MODE=rvrt"
+    exit 1
+  fi
+fi
 
 mkdir -p "$LOGDIR"
 STAMP="$(date +%Y%m%d_%H%M%S)"
@@ -80,6 +91,7 @@ echo "vq_ckpt=$VQ_CKPT"
 echo "base_ldm_ckpt=$BASE_LDM_CKPT"
 echo "rvrt_root=$RVRT_ROOT"
 echo "rvrt_ckpt=$RVRT_CKPT"
+echo "sr_frontend_mode=${SR_FRONTEND_MODE:-default}"
 echo "rvrt_train_mode=${RVRT_TRAIN_MODE:-default}"
 echo "rvrt_train_patterns=${RVRT_TRAIN_PATTERNS:-default}"
 echo "rvrt_lr=${RVRT_LR:-default}"
@@ -140,6 +152,9 @@ CMD=(
   model.params.flow_guidance_strength="$FLOW_GUIDANCE_STRENGTH"
 )
 
+if [[ -n "$SR_FRONTEND_MODE" ]]; then
+  CMD+=(model.params.sr_frontend_mode="$SR_FRONTEND_MODE")
+fi
 if [[ -n "$RVRT_TRAIN_MODE" ]]; then
   CMD+=(model.params.rvrt_train_mode="$RVRT_TRAIN_MODE")
 fi

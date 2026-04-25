@@ -20,6 +20,8 @@ def restore_flow_guidance_metadata(ldm_config, ckpt_path):
     if not metadata:
         return
     params = ldm_config.model.params
+    if "sr_frontend_mode" in metadata:
+        params.sr_frontend_mode = metadata["sr_frontend_mode"]
     if "use_flow_guidance" in metadata:
         params.use_flow_guidance = bool(metadata["use_flow_guidance"])
     if "flow_guidance_strength" in metadata:

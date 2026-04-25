@@ -99,7 +99,8 @@ class RVRTLDMVFIPipeline:
         model_frontend = getattr(self.model, "rvrt_frontend", None)
         if sr_mode == "rvrt" and model_frontend is not None:
             frontend = model_frontend.to(self.device).eval()
-            return frontend, "checkpoint rvrt_frontend"
+            frontend_mode = getattr(self.model, "sr_frontend_mode", "rvrt")
+            return frontend, f"checkpoint sr_frontend ({frontend_mode})"
 
         frontend = build_sr_frontend(
             sr_mode=sr_mode,
