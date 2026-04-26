@@ -68,6 +68,7 @@ class RVRTVideoSR(torch.nn.Module):
         rvrt_use_flow_adapter=False,
         rvrt_flow_adapter_hidden_channels=16,
         rvrt_flow_adapter_zero_init_last=True,
+        rvrt_flow_adapter_max_residue_magnitude=1.0,
         tile=(0, 0, 0),
         tile_overlap=(2, 20, 20),
     ):
@@ -90,6 +91,7 @@ class RVRTVideoSR(torch.nn.Module):
             cfg["use_flow_adapter"] = rvrt_use_flow_adapter
             cfg["flow_adapter_hidden_channels"] = rvrt_flow_adapter_hidden_channels
             cfg["flow_adapter_zero_init_last"] = rvrt_flow_adapter_zero_init_last
+            cfg["flow_adapter_max_residue_magnitude"] = rvrt_flow_adapter_max_residue_magnitude
         self.model = net(**cfg)
         self.args = SimpleNamespace(
             task=task,
@@ -234,6 +236,7 @@ def build_sr_frontend(
     rvrt_use_flow_adapter=False,
     rvrt_flow_adapter_hidden_channels=16,
     rvrt_flow_adapter_zero_init_last=True,
+    rvrt_flow_adapter_max_residue_magnitude=1.0,
     tile=(0, 0, 0),
     tile_overlap=(2, 20, 20),
 ):
@@ -252,6 +255,7 @@ def build_sr_frontend(
             rvrt_use_flow_adapter=rvrt_use_flow_adapter,
             rvrt_flow_adapter_hidden_channels=rvrt_flow_adapter_hidden_channels,
             rvrt_flow_adapter_zero_init_last=rvrt_flow_adapter_zero_init_last,
+            rvrt_flow_adapter_max_residue_magnitude=rvrt_flow_adapter_max_residue_magnitude,
             tile=tile,
             tile_overlap=tile_overlap,
         )

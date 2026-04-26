@@ -64,6 +64,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         rvrt_use_flow_adapter=False,
         rvrt_flow_adapter_hidden_channels=16,
         rvrt_flow_adapter_zero_init_last=True,
+        rvrt_flow_adapter_max_residue_magnitude=1.0,
         sr_frontend_mode="rvrt",
         rvrt_tile=(0, 0, 0),
         rvrt_tile_overlap=(2, 20, 20),
@@ -114,6 +115,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         self.rvrt_use_flow_adapter = bool(rvrt_use_flow_adapter)
         self.rvrt_flow_adapter_hidden_channels = int(rvrt_flow_adapter_hidden_channels)
         self.rvrt_flow_adapter_zero_init_last = bool(rvrt_flow_adapter_zero_init_last)
+        self.rvrt_flow_adapter_max_residue_magnitude = float(rvrt_flow_adapter_max_residue_magnitude)
         self.rvrt_train_mode = self._normalize_rvrt_train_mode(rvrt_train_mode)
         self.rvrt_lr = float(rvrt_lr)
         self.train_diffusion_model = bool(train_diffusion_model)
@@ -178,6 +180,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             rvrt_use_flow_adapter=self.rvrt_use_flow_adapter,
             rvrt_flow_adapter_hidden_channels=self.rvrt_flow_adapter_hidden_channels,
             rvrt_flow_adapter_zero_init_last=self.rvrt_flow_adapter_zero_init_last,
+            rvrt_flow_adapter_max_residue_magnitude=self.rvrt_flow_adapter_max_residue_magnitude,
             tile=tuple(rvrt_tile),
             tile_overlap=tuple(rvrt_tile_overlap),
         )
@@ -221,7 +224,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
                     print(
                         f"RVRT internal RAFT: variant={self.rvrt_raft_variant}, "
                         f"ckpt={self.rvrt_raft_ckpt}, "
-                        f"flow_adapter={self.rvrt_use_flow_adapter}"
+                        f"flow_adapter={self.rvrt_use_flow_adapter}, "
+                        f"adapter_max_residue={self.rvrt_flow_adapter_max_residue_magnitude:.3f}"
                     )
             if self._rvrt_requires_grad():
                 print(
@@ -379,6 +383,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             "rvrt_use_flow_adapter": self.rvrt_use_flow_adapter,
             "rvrt_flow_adapter_hidden_channels": self.rvrt_flow_adapter_hidden_channels,
             "rvrt_flow_adapter_zero_init_last": self.rvrt_flow_adapter_zero_init_last,
+            "rvrt_flow_adapter_max_residue_magnitude": self.rvrt_flow_adapter_max_residue_magnitude,
             "lr_sequence_key": self.lr_sequence_key,
             "rvrt_prev_index": self.rvrt_prev_index,
             "rvrt_next_index": self.rvrt_next_index,
@@ -740,67 +745,29 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         if not diffusion_params and not motion_params and not adapter_params and not rvrt_params:
             raise RuntimeError("No trainable parameters found")
         param_groups = []
+        group_summaries = []
         if diffusion_params:
             param_groups.append({"params": diffusion_params, "lr": self.learning_rate})
+            group_summaries.append(f"diffusion n={len(diffusion_params)} lr={self.learning_rate:.2e}")
         if motion_params:
             param_groups.append({"params": motion_params, "lr": self.learning_rate * self.motion_lr_scale})
+            group_summaries.append(
+                f"motion n={len(motion_params)} lr={self.learning_rate * self.motion_lr_scale:.2e}"
+            )
         if adapter_params:
             param_groups.append({"params": adapter_params, "lr": self.learning_rate * self.condition_adapter_lr_scale})
+            group_summaries.append(
+                f"adapter n={len(adapter_params)} lr={self.learning_rate * self.condition_adapter_lr_scale:.2e}"
+            )
         if rvrt_params:
             param_groups.append({"params": rvrt_params, "lr": self.rvrt_lr})
+            group_summaries.append(f"rvrt n={len(rvrt_params)} lr={self.rvrt_lr:.2e}")
         if self.learn_logvar:
             param_groups.append({"params": [self.logvar], "lr": self.learning_rate})
+            group_summaries.append(f"logvar n=1 lr={self.learning_rate:.2e}")
         opt = torch.optim.AdamW(param_groups, lr=self.learning_rate)
         if _is_rank_zero(self):
-            if motion_params and adapter_params and rvrt_params:
-                print(
-                    "Optimizer groups: "
-                    f"diffusion lr={self.learning_rate:.2e}, "
-                    f"motion lr={self.learning_rate * self.motion_lr_scale:.2e}, "
-                    f"adapter lr={self.learning_rate * self.condition_adapter_lr_scale:.2e}, "
-                    f"rvrt lr={self.rvrt_lr:.2e}"
-                )
-            elif motion_params and adapter_params:
-                print(
-                    "Optimizer groups: "
-                    f"diffusion lr={self.learning_rate:.2e}, "
-                    f"motion lr={self.learning_rate * self.motion_lr_scale:.2e}, "
-                    f"adapter lr={self.learning_rate * self.condition_adapter_lr_scale:.2e}"
-                )
-            elif adapter_params and rvrt_params:
-                print(
-                    "Optimizer groups: "
-                    f"diffusion lr={self.learning_rate:.2e}, "
-                    f"adapter lr={self.learning_rate * self.condition_adapter_lr_scale:.2e}, "
-                    f"rvrt lr={self.rvrt_lr:.2e}"
-                )
-            elif motion_params and rvrt_params:
-                print(
-                    "Optimizer groups: "
-                    f"diffusion lr={self.learning_rate:.2e}, "
-                    f"motion lr={self.learning_rate * self.motion_lr_scale:.2e}, "
-                    f"rvrt lr={self.rvrt_lr:.2e}"
-                )
-            elif adapter_params:
-                print(
-                    "Optimizer groups: "
-                    f"diffusion lr={self.learning_rate:.2e}, "
-                    f"adapter lr={self.learning_rate * self.condition_adapter_lr_scale:.2e}"
-                )
-            elif motion_params:
-                print(
-                    "Optimizer groups: "
-                    f"diffusion lr={self.learning_rate:.2e}, "
-                    f"motion lr={self.learning_rate * self.motion_lr_scale:.2e}"
-                )
-            elif rvrt_params:
-                print(
-                    "Optimizer groups: "
-                    f"diffusion lr={self.learning_rate:.2e}, "
-                    f"rvrt lr={self.rvrt_lr:.2e}"
-                )
-            else:
-                print(f"Optimizer groups: diffusion lr={self.learning_rate:.2e}")
+            print("Optimizer groups: " + ", ".join(group_summaries))
         if self.use_scheduler:
             scheduler = instantiate_from_config(self.scheduler_config)
             scheduler = [{"scheduler": LambdaLR(opt, lr_lambda=scheduler.schedule), "interval": "step", "frequency": 1}]

@@ -37,6 +37,7 @@ RVRT_RAFT_CKPT="${RVRT_RAFT_CKPT:-}"
 RVRT_USE_FLOW_ADAPTER="${RVRT_USE_FLOW_ADAPTER:-}"
 RVRT_FLOW_ADAPTER_HIDDEN_CHANNELS="${RVRT_FLOW_ADAPTER_HIDDEN_CHANNELS:-}"
 RVRT_FLOW_ADAPTER_ZERO_INIT_LAST="${RVRT_FLOW_ADAPTER_ZERO_INIT_LAST:-}"
+RVRT_FLOW_ADAPTER_MAX_RESIDUE="${RVRT_FLOW_ADAPTER_MAX_RESIDUE:-}"
 SR_FRONTEND_MODE="${SR_FRONTEND_MODE:-}"
 RVRT_TRAIN_MODE="${RVRT_TRAIN_MODE:-}"
 RVRT_TRAIN_PATTERNS="${RVRT_TRAIN_PATTERNS:-}"
@@ -104,6 +105,7 @@ echo "rvrt_raft_ckpt=${RVRT_RAFT_CKPT:-default}"
 echo "rvrt_use_flow_adapter=${RVRT_USE_FLOW_ADAPTER:-default}"
 echo "rvrt_flow_adapter_hidden_channels=${RVRT_FLOW_ADAPTER_HIDDEN_CHANNELS:-default}"
 echo "rvrt_flow_adapter_zero_init_last=${RVRT_FLOW_ADAPTER_ZERO_INIT_LAST:-default}"
+echo "rvrt_flow_adapter_max_residue=${RVRT_FLOW_ADAPTER_MAX_RESIDUE:-default}"
 echo "sr_frontend_mode=${SR_FRONTEND_MODE:-default}"
 echo "rvrt_train_mode=${RVRT_TRAIN_MODE:-default}"
 echo "rvrt_train_patterns=${RVRT_TRAIN_PATTERNS:-default}"
@@ -198,6 +200,9 @@ if [[ -n "$RVRT_FLOW_ADAPTER_HIDDEN_CHANNELS" ]]; then
 fi
 if [[ -n "$RVRT_FLOW_ADAPTER_ZERO_INIT_LAST" ]]; then
   CMD+=(model.params.rvrt_flow_adapter_zero_init_last="$RVRT_FLOW_ADAPTER_ZERO_INIT_LAST")
+fi
+if [[ -n "$RVRT_FLOW_ADAPTER_MAX_RESIDUE" ]]; then
+  CMD+=(model.params.rvrt_flow_adapter_max_residue_magnitude="$RVRT_FLOW_ADAPTER_MAX_RESIDUE")
 fi
 
 if [[ -n "$FLOW_CONDITION_MODE" ]]; then

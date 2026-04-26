@@ -29,6 +29,7 @@ class RVRTLDMVFIPipeline:
         rvrt_use_flow_adapter=False,
         rvrt_flow_adapter_hidden_channels=16,
         rvrt_flow_adapter_zero_init_last=True,
+        rvrt_flow_adapter_max_residue_magnitude=1.0,
         device=None,
         tile=(0, 0, 0),
         tile_overlap=(2, 20, 20),
@@ -89,6 +90,7 @@ class RVRTLDMVFIPipeline:
             rvrt_use_flow_adapter=rvrt_use_flow_adapter,
             rvrt_flow_adapter_hidden_channels=rvrt_flow_adapter_hidden_channels,
             rvrt_flow_adapter_zero_init_last=rvrt_flow_adapter_zero_init_last,
+            rvrt_flow_adapter_max_residue_magnitude=rvrt_flow_adapter_max_residue_magnitude,
             tile=tile,
             tile_overlap=tile_overlap,
         )
@@ -120,6 +122,7 @@ class RVRTLDMVFIPipeline:
         rvrt_use_flow_adapter,
         rvrt_flow_adapter_hidden_channels,
         rvrt_flow_adapter_zero_init_last,
+        rvrt_flow_adapter_max_residue_magnitude,
         tile,
         tile_overlap,
     ):
@@ -141,6 +144,7 @@ class RVRTLDMVFIPipeline:
             rvrt_use_flow_adapter=rvrt_use_flow_adapter,
             rvrt_flow_adapter_hidden_channels=rvrt_flow_adapter_hidden_channels,
             rvrt_flow_adapter_zero_init_last=rvrt_flow_adapter_zero_init_last,
+            rvrt_flow_adapter_max_residue_magnitude=rvrt_flow_adapter_max_residue_magnitude,
             tile=tile,
             tile_overlap=tile_overlap,
         )

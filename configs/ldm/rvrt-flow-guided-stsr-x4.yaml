@@ -25,6 +25,7 @@ model:
     rvrt_use_flow_adapter: False
     rvrt_flow_adapter_hidden_channels: 16
     rvrt_flow_adapter_zero_init_last: True
+    rvrt_flow_adapter_max_residue_magnitude: 1.0
     lr_sequence_key: lr_sequence
     rvrt_prev_index: 2
     rvrt_next_index: 4
