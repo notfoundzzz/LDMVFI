@@ -40,10 +40,15 @@ class Vimeo90kTripletSTSRLoRA(Dataset):
         image = self._read(join(hr_dir, "im4.png"))
         prev_lr = self._read(join(lr_dir, "im3.png"))
         next_lr = self._read(join(lr_dir, "im5.png"))
+        lr_sequence = np.stack(
+            [self._read(join(lr_dir, f"im{i}.png")) for i in range(1, 7)],
+            axis=0,
+        )
 
         return {
             "image": image,
             "prev_frame_lr": prev_lr,
             "next_frame_lr": next_lr,
+            "lr_sequence": lr_sequence,
             "sample_id": sample_id,
         }

@@ -28,6 +28,12 @@ def restore_flow_guidance_metadata(ldm_config, ckpt_path):
         params.rvrt_raft_variant = metadata["rvrt_raft_variant"]
     if "rvrt_raft_ckpt" in metadata:
         params.rvrt_raft_ckpt = metadata["rvrt_raft_ckpt"]
+    if "lr_sequence_key" in metadata:
+        params.lr_sequence_key = metadata["lr_sequence_key"]
+    if "rvrt_prev_index" in metadata:
+        params.rvrt_prev_index = int(metadata["rvrt_prev_index"])
+    if "rvrt_next_index" in metadata:
+        params.rvrt_next_index = int(metadata["rvrt_next_index"])
     if "use_flow_guidance" in metadata:
         params.use_flow_guidance = bool(metadata["use_flow_guidance"])
     if "flow_guidance_strength" in metadata:
@@ -86,6 +92,15 @@ def load_triplet(folder, transform):
             nxt = transform(Image.open(next_path)).unsqueeze(0)
             return prev, gt, nxt
     raise FileNotFoundError(f"No supported triplet naming found in {folder}")
+
+
+def load_lr_sequence(folder, transform):
+    names = [f"im{i}.png" for i in range(1, 7)]
+    paths = [join(folder, name) for name in names]
+    if not all(os.path.exists(path) for path in paths):
+        return None
+    frames = [transform(Image.open(path)) for path in paths]
+    return torch.stack(frames, dim=0).unsqueeze(0)
 
 
 def collect_triplet_folders(dataset_root, list_file=None, max_samples=0):
@@ -232,12 +247,14 @@ def main():
     for idx, (name, folder) in enumerate(triplet_folders, start=1):
         print(f"[{idx}/{len(triplet_folders)}] {name}")
         prev_lr, _, next_lr = load_triplet(folder, transform)
+        lr_sequence = load_lr_sequence(folder, transform)
         hr_folder = join(dataset_root_hr, *name.split("/"))
         _, gt, _ = load_triplet(hr_folder, transform)
         with torch.no_grad():
             out, prev_sr, next_sr = pipeline.interpolate(
                 prev_lr,
                 next_lr,
+                lr_sequence=lr_sequence,
                 use_ddim=args.use_ddim,
                 ddim_steps=args.ddim_steps,
                 ddim_eta=args.ddim_eta,

@@ -142,11 +142,23 @@ class RVRTLDMVFIPipeline:
         return torch.random.fork_rng(devices=devices)
 
     @torch.no_grad()
-    def super_resolve_neighbors(self, prev_lr, next_lr):
-        seq = torch.stack([prev_lr, next_lr], dim=1).to(self.device)
+    def super_resolve_neighbors(self, prev_lr, next_lr, lr_sequence=None, prev_index=None, next_index=None):
+        if lr_sequence is not None:
+            seq = lr_sequence.to(self.device)
+            if prev_index is None:
+                prev_index = int(getattr(self.model, "rvrt_prev_index", 2))
+            if next_index is None:
+                next_index = int(getattr(self.model, "rvrt_next_index", 4))
+        else:
+            seq = torch.stack([prev_lr, next_lr], dim=1).to(self.device)
+            prev_index, next_index = 0, 1
         out = self.sr_frontend(seq)
-        raw_prev_sr = torch.clamp(out[:, 0] * 2.0 - 1.0, min=-1.0, max=1.0)
-        raw_next_sr = torch.clamp(out[:, 1] * 2.0 - 1.0, min=-1.0, max=1.0)
+        if max(prev_index, next_index) >= out.shape[1]:
+            raise ValueError(
+                f"SR frontend returned {out.shape[1]} frames, cannot select indices {prev_index}/{next_index}"
+            )
+        raw_prev_sr = torch.clamp(out[:, prev_index] * 2.0 - 1.0, min=-1.0, max=1.0)
+        raw_next_sr = torch.clamp(out[:, next_index] * 2.0 - 1.0, min=-1.0, max=1.0)
         if hasattr(self.model, "_adapt_condition_frames"):
             prev_sr, next_sr = self.model._adapt_condition_frames(raw_prev_sr, raw_next_sr)
         else:
@@ -154,13 +166,29 @@ class RVRTLDMVFIPipeline:
         return raw_prev_sr, raw_next_sr, prev_sr, next_sr
 
     @torch.no_grad()
-    def interpolate(self, prev_lr, next_lr, use_ddim=True, ddim_steps=200, ddim_eta=0.0, seed=None):
+    def interpolate(
+        self,
+        prev_lr,
+        next_lr,
+        lr_sequence=None,
+        use_ddim=True,
+        ddim_steps=200,
+        ddim_eta=0.0,
+        seed=None,
+    ):
         prev_lr = prev_lr.to(self.device)
         next_lr = next_lr.to(self.device)
 
         prev_01 = (prev_lr + 1.0) / 2.0
         next_01 = (next_lr + 1.0) / 2.0
-        raw_prev_sr, raw_next_sr, prev_sr, next_sr = self.super_resolve_neighbors(prev_01, next_01)
+        lr_sequence_01 = None
+        if lr_sequence is not None:
+            lr_sequence_01 = ((lr_sequence.to(self.device) + 1.0) / 2.0).clamp(0.0, 1.0)
+        raw_prev_sr, raw_next_sr, prev_sr, next_sr = self.super_resolve_neighbors(
+            prev_01,
+            next_01,
+            lr_sequence=lr_sequence_01,
+        )
 
         scope = self.model.ema_scope() if self.use_ema and hasattr(self.model, "ema_scope") else nullcontext()
         with scope:

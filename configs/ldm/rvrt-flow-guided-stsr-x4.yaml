@@ -21,6 +21,9 @@ model:
     rvrt_flow_mode: spynet
     rvrt_raft_variant: large
     rvrt_raft_ckpt:
+    lr_sequence_key: lr_sequence
+    rvrt_prev_index: 2
+    rvrt_next_index: 4
     use_flow_guidance: False
     flow_guidance_strength: 0.25
     flow_condition_mode: latent_explicit

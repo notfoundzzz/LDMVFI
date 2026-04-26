@@ -69,6 +69,9 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         rvrt_lr=5.0e-6,
         lr_prev_key="prev_frame_lr",
         lr_next_key="next_frame_lr",
+        lr_sequence_key="lr_sequence",
+        rvrt_prev_index=2,
+        rvrt_next_index=4,
         cond_prev_key="prev_frame",
         cond_next_key="next_frame",
         cond_flow_key="flow_prior",
@@ -94,6 +97,9 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         super().__init__(*args, **kwargs)
         self.lr_prev_key = lr_prev_key
         self.lr_next_key = lr_next_key
+        self.lr_sequence_key = lr_sequence_key
+        self.rvrt_prev_index = int(rvrt_prev_index)
+        self.rvrt_next_index = int(rvrt_next_index)
         self.cond_prev_key = cond_prev_key
         self.cond_next_key = cond_next_key
         self.cond_flow_key = cond_flow_key
@@ -191,6 +197,11 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             print(f"SR frontend mode: {self.sr_frontend_mode}")
             if self.sr_frontend_mode == "rvrt":
                 print(f"RVRT internal flow mode: {self.rvrt_flow_mode}")
+                print(
+                    "RVRT sequence conditioning: "
+                    f"key={self.lr_sequence_key}, prev_index={self.rvrt_prev_index}, "
+                    f"next_index={self.rvrt_next_index}"
+                )
                 if self.rvrt_flow_mode == "raft":
                     print(
                         f"RVRT internal RAFT: variant={self.rvrt_raft_variant}, "
@@ -336,6 +347,9 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             "rvrt_flow_mode": self.rvrt_flow_mode,
             "rvrt_raft_variant": self.rvrt_raft_variant,
             "rvrt_raft_ckpt": self.rvrt_raft_ckpt,
+            "lr_sequence_key": self.lr_sequence_key,
+            "rvrt_prev_index": self.rvrt_prev_index,
+            "rvrt_next_index": self.rvrt_next_index,
             "use_flow_guidance": self.use_flow_guidance,
             "flow_guidance_strength": self.flow_guidance_strength,
             "flow_condition_mode": self.flow_condition_mode,
@@ -370,6 +384,21 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         else:
             self.rvrt_frontend.eval()
 
+    def _get_lr_sequence(self, batch, bs=None):
+        if self.lr_sequence_key not in batch:
+            return None
+        seq = batch[self.lr_sequence_key]
+        if bs is not None:
+            seq = seq[:bs]
+        seq = seq.to(self.device).float()
+        if seq.ndim != 5:
+            raise ValueError(
+                f"Expected {self.lr_sequence_key} with shape B,T,H,W,C or B,T,C,H,W, got {tuple(seq.shape)}"
+            )
+        if seq.shape[-1] in (1, 3):
+            seq = seq.permute(0, 1, 4, 2, 3).contiguous()
+        return seq
+
     def _super_resolve_neighbors(self, batch, bs=None):
         prev_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_prev_key).to(self.device)
         next_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_next_key).to(self.device)
@@ -377,14 +406,26 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             prev_lr = prev_lr[:bs]
             next_lr = next_lr[:bs]
 
-        prev_01 = (prev_lr + 1.0) / 2.0
-        next_01 = (next_lr + 1.0) / 2.0
-        seq = torch.stack([prev_01, next_01], dim=1)
+        lr_sequence = self._get_lr_sequence(batch, bs=bs)
+        if lr_sequence is not None:
+            seq = (lr_sequence + 1.0) / 2.0
+            prev_index = self.rvrt_prev_index
+            next_index = self.rvrt_next_index
+        else:
+            prev_01 = (prev_lr + 1.0) / 2.0
+            next_01 = (next_lr + 1.0) / 2.0
+            seq = torch.stack([prev_01, next_01], dim=1)
+            prev_index, next_index = 0, 1
         grad_context = nullcontext() if self._rvrt_requires_grad() else torch.no_grad()
         with grad_context:
             out = self.rvrt_frontend(seq)
-        prev_sr = torch.clamp(out[:, 0] * 2.0 - 1.0, min=-1.0, max=1.0)
-        next_sr = torch.clamp(out[:, 1] * 2.0 - 1.0, min=-1.0, max=1.0)
+        if max(prev_index, next_index) >= out.shape[1]:
+            raise ValueError(
+                f"RVRT output has {out.shape[1]} frames, cannot select indices "
+                f"{prev_index}/{next_index}"
+            )
+        prev_sr = torch.clamp(out[:, prev_index] * 2.0 - 1.0, min=-1.0, max=1.0)
+        next_sr = torch.clamp(out[:, next_index] * 2.0 - 1.0, min=-1.0, max=1.0)
         raw_prev_sr, raw_next_sr = prev_sr, next_sr
         prev_sr, next_sr = self._adapt_condition_frames(prev_sr, next_sr)
         return raw_prev_sr, raw_next_sr, prev_sr, next_sr
