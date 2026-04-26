@@ -18,6 +18,7 @@ model:
     rvrt_root: /data/Shenzhen/zhahongli/RVRT
     rvrt_task: 002_RVRT_videosr_bi_Vimeo_14frames
     rvrt_ckpt: /data/Shenzhen/zhahongli/RVRT/model_zoo/rvrt/002_RVRT_videosr_bi_Vimeo_14frames.pth
+    train_diffusion_model: True
     rvrt_flow_mode: spynet
     rvrt_raft_variant: large
     rvrt_raft_ckpt:

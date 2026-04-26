@@ -70,6 +70,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         rvrt_train_mode="frozen",
         rvrt_train_patterns=None,
         rvrt_lr=5.0e-6,
+        train_diffusion_model=True,
         lr_prev_key="prev_frame_lr",
         lr_next_key="next_frame_lr",
         lr_sequence_key="lr_sequence",
@@ -115,6 +116,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         self.rvrt_flow_adapter_zero_init_last = bool(rvrt_flow_adapter_zero_init_last)
         self.rvrt_train_mode = self._normalize_rvrt_train_mode(rvrt_train_mode)
         self.rvrt_lr = float(rvrt_lr)
+        self.train_diffusion_model = bool(train_diffusion_model)
         self.use_flow_guidance = bool(use_flow_guidance)
         self.flow_guidance_strength = float(flow_guidance_strength)
         self.flow_condition_mode = str(flow_condition_mode)
@@ -187,7 +189,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         for param in self.cond_stage_model.parameters():
             param.requires_grad = False
         for param in self.model.parameters():
-            param.requires_grad = True
+            param.requires_grad = self.train_diffusion_model
 
         trainable = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         if self.flow_condition_fuser is not None:
@@ -224,6 +226,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
                 )
             else:
                 print("RVRT frontend frozen")
+            print(f"Diffusion UNet trainable: {self.train_diffusion_model}")
             print("First-stage and cond-stage frozen")
             print(
                 f"Flow guidance enabled: {self.use_flow_guidance}, strength={self.flow_guidance_strength:.3f}, "
@@ -399,6 +402,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             "rvrt_train_mode": self.rvrt_train_mode,
             "rvrt_train_patterns": self.rvrt_trainable_patterns,
             "rvrt_lr": self.rvrt_lr,
+            "train_diffusion_model": self.train_diffusion_model,
         }
 
     def on_fit_start(self):

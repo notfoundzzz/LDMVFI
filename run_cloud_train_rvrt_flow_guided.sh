@@ -41,6 +41,7 @@ SR_FRONTEND_MODE="${SR_FRONTEND_MODE:-}"
 RVRT_TRAIN_MODE="${RVRT_TRAIN_MODE:-}"
 RVRT_TRAIN_PATTERNS="${RVRT_TRAIN_PATTERNS:-}"
 RVRT_LR="${RVRT_LR:-}"
+TRAIN_DIFFUSION_MODEL="${TRAIN_DIFFUSION_MODEL:-}"
 SAVE_TRAIN_IMAGES="${SAVE_TRAIN_IMAGES:-0}"
 MODEL_BASE_LR="${MODEL_BASE_LR:-}"
 USE_FLOW_GUIDANCE="${USE_FLOW_GUIDANCE:-1}"
@@ -107,6 +108,7 @@ echo "sr_frontend_mode=${SR_FRONTEND_MODE:-default}"
 echo "rvrt_train_mode=${RVRT_TRAIN_MODE:-default}"
 echo "rvrt_train_patterns=${RVRT_TRAIN_PATTERNS:-default}"
 echo "rvrt_lr=${RVRT_LR:-default}"
+echo "train_diffusion_model=${TRAIN_DIFFUSION_MODEL:-default}"
 echo "save_train_images=$SAVE_TRAIN_IMAGES"
 echo "model_base_lr=${MODEL_BASE_LR:-default}"
 echo "use_flow_guidance=$USE_FLOW_GUIDANCE"
@@ -175,6 +177,9 @@ if [[ -n "$RVRT_TRAIN_PATTERNS" ]]; then
 fi
 if [[ -n "$RVRT_LR" ]]; then
   CMD+=(model.params.rvrt_lr="$RVRT_LR")
+fi
+if [[ -n "$TRAIN_DIFFUSION_MODEL" ]]; then
+  CMD+=(model.params.train_diffusion_model="$TRAIN_DIFFUSION_MODEL")
 fi
 if [[ -n "$RVRT_FLOW_MODE" ]]; then
   CMD+=(model.params.rvrt_flow_mode="$RVRT_FLOW_MODE")
