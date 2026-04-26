@@ -190,6 +190,10 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             param.requires_grad = False
         for param in self.model.parameters():
             param.requires_grad = self.train_diffusion_model
+        if not self.train_diffusion_model and self.use_ema:
+            self.use_ema = False
+            if _is_rank_zero(self):
+                print("Diffusion EMA disabled because diffusion UNet is frozen")
 
         trainable = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         if self.flow_condition_fuser is not None:
