@@ -36,6 +36,9 @@ RVRT_CKPT="${RVRT_CKPT:-$RVRT_ROOT/model_zoo/rvrt/${RVRT_TASK}.pth}"
 RVRT_FLOW_MODE="${RVRT_FLOW_MODE:-spynet}"
 RVRT_RAFT_VARIANT="${RVRT_RAFT_VARIANT:-large}"
 RVRT_RAFT_CKPT="${RVRT_RAFT_CKPT:-}"
+RVRT_USE_FLOW_ADAPTER="${RVRT_USE_FLOW_ADAPTER:-}"
+RVRT_FLOW_ADAPTER_HIDDEN_CHANNELS="${RVRT_FLOW_ADAPTER_HIDDEN_CHANNELS:-}"
+RVRT_FLOW_ADAPTER_ZERO_INIT_LAST="${RVRT_FLOW_ADAPTER_ZERO_INIT_LAST:-}"
 MAX_SAMPLES="${MAX_SAMPLES:-0}"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/eval_results_rvrt_ldmvfi/${SPLIT}/${SR_MODE}}"
 LOG_ROOT="${LOG_ROOT:-$ROOT_DIR/logs}"
@@ -86,6 +89,9 @@ echo "rvrt_ckpt=$RVRT_CKPT"
 echo "rvrt_flow_mode=$RVRT_FLOW_MODE"
 echo "rvrt_raft_variant=$RVRT_RAFT_VARIANT"
 echo "rvrt_raft_ckpt=${RVRT_RAFT_CKPT:-default}"
+echo "rvrt_use_flow_adapter=${RVRT_USE_FLOW_ADAPTER:-default}"
+echo "rvrt_flow_adapter_hidden_channels=${RVRT_FLOW_ADAPTER_HIDDEN_CHANNELS:-default}"
+echo "rvrt_flow_adapter_zero_init_last=${RVRT_FLOW_ADAPTER_ZERO_INIT_LAST:-default}"
 echo "max_samples=$MAX_SAMPLES"
 echo "save_images=$SAVE_IMAGES"
 echo "save_sr_images=$SAVE_SR_IMAGES"
@@ -207,6 +213,15 @@ for SPLIT_NAME in "${SPLIT_ARRAY[@]}"; do
   fi
   if [[ -n "$RVRT_RAFT_CKPT" ]]; then
     CMD+=(--rvrt_raft_ckpt "$RVRT_RAFT_CKPT")
+  fi
+  if [[ -n "$RVRT_USE_FLOW_ADAPTER" ]]; then
+    CMD+=(--rvrt_use_flow_adapter "$RVRT_USE_FLOW_ADAPTER")
+  fi
+  if [[ -n "$RVRT_FLOW_ADAPTER_HIDDEN_CHANNELS" ]]; then
+    CMD+=(--rvrt_flow_adapter_hidden_channels "$RVRT_FLOW_ADAPTER_HIDDEN_CHANNELS")
+  fi
+  if [[ -n "$RVRT_FLOW_ADAPTER_ZERO_INIT_LAST" ]]; then
+    CMD+=(--rvrt_flow_adapter_zero_init_last "$RVRT_FLOW_ADAPTER_ZERO_INIT_LAST")
   fi
 
   "${CMD[@]}"

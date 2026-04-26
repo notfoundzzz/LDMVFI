@@ -65,6 +65,9 @@ class RVRTVideoSR(torch.nn.Module):
         rvrt_flow_mode="spynet",
         rvrt_raft_variant="large",
         rvrt_raft_ckpt=None,
+        rvrt_use_flow_adapter=False,
+        rvrt_flow_adapter_hidden_channels=16,
+        rvrt_flow_adapter_zero_init_last=True,
         tile=(0, 0, 0),
         tile_overlap=(2, 20, 20),
     ):
@@ -84,6 +87,9 @@ class RVRTVideoSR(torch.nn.Module):
         if self.flow_mode == "raft":
             cfg["raft_variant"] = rvrt_raft_variant
             cfg["raft_path"] = rvrt_raft_ckpt
+            cfg["use_flow_adapter"] = rvrt_use_flow_adapter
+            cfg["flow_adapter_hidden_channels"] = rvrt_flow_adapter_hidden_channels
+            cfg["flow_adapter_zero_init_last"] = rvrt_flow_adapter_zero_init_last
         self.model = net(**cfg)
         self.args = SimpleNamespace(
             task=task,
@@ -101,7 +107,18 @@ class RVRTVideoSR(torch.nn.Module):
                 "Download it from the RVRT releases into model_zoo/rvrt."
             )
         pretrained = torch.load(model_path, map_location="cpu")
-        self.model.load_state_dict(pretrained["params"] if "params" in pretrained else pretrained, strict=True)
+        state_dict = pretrained["params"] if "params" in pretrained else pretrained
+        if self.flow_mode == "raft" and rvrt_use_flow_adapter:
+            missing, unexpected = self.model.load_state_dict(state_dict, strict=False)
+            unexpected = [key for key in unexpected if not key.startswith("flow_adapter.")]
+            missing = [key for key in missing if not key.startswith("flow_adapter.")]
+            if missing or unexpected:
+                raise RuntimeError(
+                    "Failed to load RVRT checkpoint with flow adapter. "
+                    f"missing={missing[:10]}, unexpected={unexpected[:10]}"
+                )
+        else:
+            self.model.load_state_dict(state_dict, strict=True)
         self.model.eval()
         for param in self.model.parameters():
             param.requires_grad = False
@@ -214,6 +231,9 @@ def build_sr_frontend(
     rvrt_flow_mode="spynet",
     rvrt_raft_variant="large",
     rvrt_raft_ckpt=None,
+    rvrt_use_flow_adapter=False,
+    rvrt_flow_adapter_hidden_channels=16,
+    rvrt_flow_adapter_zero_init_last=True,
     tile=(0, 0, 0),
     tile_overlap=(2, 20, 20),
 ):
@@ -229,6 +249,9 @@ def build_sr_frontend(
             rvrt_flow_mode=rvrt_flow_mode,
             rvrt_raft_variant=rvrt_raft_variant,
             rvrt_raft_ckpt=rvrt_raft_ckpt,
+            rvrt_use_flow_adapter=rvrt_use_flow_adapter,
+            rvrt_flow_adapter_hidden_channels=rvrt_flow_adapter_hidden_channels,
+            rvrt_flow_adapter_zero_init_last=rvrt_flow_adapter_zero_init_last,
             tile=tile,
             tile_overlap=tile_overlap,
         )

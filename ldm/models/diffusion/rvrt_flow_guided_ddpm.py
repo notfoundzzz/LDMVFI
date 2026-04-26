@@ -51,7 +51,7 @@ class _ConditionFrameAdapter(torch.nn.Module):
 
 
 class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
-    _ALLOWED_RVRT_TRAIN_MODES = ("frozen", "partial")
+    _ALLOWED_RVRT_TRAIN_MODES = ("frozen", "partial", "flow_adapt")
 
     def __init__(
         self,
@@ -61,6 +61,9 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         rvrt_flow_mode="spynet",
         rvrt_raft_variant="large",
         rvrt_raft_ckpt=None,
+        rvrt_use_flow_adapter=False,
+        rvrt_flow_adapter_hidden_channels=16,
+        rvrt_flow_adapter_zero_init_last=True,
         sr_frontend_mode="rvrt",
         rvrt_tile=(0, 0, 0),
         rvrt_tile_overlap=(2, 20, 20),
@@ -107,6 +110,9 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         self.rvrt_flow_mode = str(rvrt_flow_mode)
         self.rvrt_raft_variant = str(rvrt_raft_variant)
         self.rvrt_raft_ckpt = rvrt_raft_ckpt
+        self.rvrt_use_flow_adapter = bool(rvrt_use_flow_adapter)
+        self.rvrt_flow_adapter_hidden_channels = int(rvrt_flow_adapter_hidden_channels)
+        self.rvrt_flow_adapter_zero_init_last = bool(rvrt_flow_adapter_zero_init_last)
         self.rvrt_train_mode = self._normalize_rvrt_train_mode(rvrt_train_mode)
         self.rvrt_lr = float(rvrt_lr)
         self.use_flow_guidance = bool(use_flow_guidance)
@@ -167,6 +173,9 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             rvrt_flow_mode=self.rvrt_flow_mode,
             rvrt_raft_variant=self.rvrt_raft_variant,
             rvrt_raft_ckpt=self.rvrt_raft_ckpt,
+            rvrt_use_flow_adapter=self.rvrt_use_flow_adapter,
+            rvrt_flow_adapter_hidden_channels=self.rvrt_flow_adapter_hidden_channels,
+            rvrt_flow_adapter_zero_init_last=self.rvrt_flow_adapter_zero_init_last,
             tile=tuple(rvrt_tile),
             tile_overlap=tuple(rvrt_tile_overlap),
         )
@@ -205,7 +214,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
                 if self.rvrt_flow_mode == "raft":
                     print(
                         f"RVRT internal RAFT: variant={self.rvrt_raft_variant}, "
-                        f"ckpt={self.rvrt_raft_ckpt}"
+                        f"ckpt={self.rvrt_raft_ckpt}, "
+                        f"flow_adapter={self.rvrt_use_flow_adapter}"
                     )
             if self._rvrt_requires_grad():
                 print(
@@ -289,6 +299,12 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
 
     def _normalize_rvrt_train_patterns(self, patterns):
         if patterns is None:
+            if self.rvrt_train_mode == "flow_adapt":
+                return (
+                    "flow_adapter",
+                    "deform_align",
+                    "backbone",
+                )
             return (
                 "conv_before_upsample",
                 "conv_up1",
@@ -319,6 +335,12 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         if not self._rvrt_requires_grad():
             self.rvrt_frontend.eval()
             return
+        if self.rvrt_train_mode == "flow_adapt":
+            if self.rvrt_flow_mode != "raft" or not self.rvrt_use_flow_adapter:
+                raise ValueError(
+                    "rvrt_train_mode=flow_adapt requires rvrt_flow_mode=raft "
+                    "and rvrt_use_flow_adapter=True"
+                )
 
         trainable_names = []
         for name, param in self.rvrt_frontend.named_parameters():
@@ -347,6 +369,9 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             "rvrt_flow_mode": self.rvrt_flow_mode,
             "rvrt_raft_variant": self.rvrt_raft_variant,
             "rvrt_raft_ckpt": self.rvrt_raft_ckpt,
+            "rvrt_use_flow_adapter": self.rvrt_use_flow_adapter,
+            "rvrt_flow_adapter_hidden_channels": self.rvrt_flow_adapter_hidden_channels,
+            "rvrt_flow_adapter_zero_init_last": self.rvrt_flow_adapter_zero_init_last,
             "lr_sequence_key": self.lr_sequence_key,
             "rvrt_prev_index": self.rvrt_prev_index,
             "rvrt_next_index": self.rvrt_next_index,

@@ -21,6 +21,9 @@ model:
     rvrt_flow_mode: spynet
     rvrt_raft_variant: large
     rvrt_raft_ckpt:
+    rvrt_use_flow_adapter: False
+    rvrt_flow_adapter_hidden_channels: 16
+    rvrt_flow_adapter_zero_init_last: True
     lr_sequence_key: lr_sequence
     rvrt_prev_index: 2
     rvrt_next_index: 4

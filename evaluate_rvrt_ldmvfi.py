@@ -28,6 +28,12 @@ def restore_flow_guidance_metadata(ldm_config, ckpt_path):
         params.rvrt_raft_variant = metadata["rvrt_raft_variant"]
     if "rvrt_raft_ckpt" in metadata:
         params.rvrt_raft_ckpt = metadata["rvrt_raft_ckpt"]
+    if "rvrt_use_flow_adapter" in metadata:
+        params.rvrt_use_flow_adapter = bool(metadata["rvrt_use_flow_adapter"])
+    if "rvrt_flow_adapter_hidden_channels" in metadata:
+        params.rvrt_flow_adapter_hidden_channels = int(metadata["rvrt_flow_adapter_hidden_channels"])
+    if "rvrt_flow_adapter_zero_init_last" in metadata:
+        params.rvrt_flow_adapter_zero_init_last = bool(metadata["rvrt_flow_adapter_zero_init_last"])
     if "lr_sequence_key" in metadata:
         params.lr_sequence_key = metadata["lr_sequence_key"]
     if "rvrt_prev_index" in metadata:
@@ -167,6 +173,9 @@ def main():
     parser.add_argument("--rvrt_flow_mode", choices=["spynet", "zero", "raft"], default="spynet")
     parser.add_argument("--rvrt_raft_variant", choices=["small", "large"], default="large")
     parser.add_argument("--rvrt_raft_ckpt", default=None)
+    parser.add_argument("--rvrt_use_flow_adapter", type=int, choices=[0, 1], default=None)
+    parser.add_argument("--rvrt_flow_adapter_hidden_channels", type=int, default=None)
+    parser.add_argument("--rvrt_flow_adapter_zero_init_last", type=int, choices=[0, 1], default=None)
     parser.add_argument("--use_ddim", dest="use_ddim", action="store_true")
     parser.add_argument("--use_ddpm", dest="use_ddim", action="store_false")
     parser.add_argument("--ddim_steps", type=int, default=200)
@@ -200,6 +209,12 @@ def main():
     ldm_config.model.params.rvrt_flow_mode = args.rvrt_flow_mode
     ldm_config.model.params.rvrt_raft_variant = args.rvrt_raft_variant
     ldm_config.model.params.rvrt_raft_ckpt = args.rvrt_raft_ckpt
+    if args.rvrt_use_flow_adapter is not None:
+        ldm_config.model.params.rvrt_use_flow_adapter = bool(args.rvrt_use_flow_adapter)
+    if args.rvrt_flow_adapter_hidden_channels is not None:
+        ldm_config.model.params.rvrt_flow_adapter_hidden_channels = args.rvrt_flow_adapter_hidden_channels
+    if args.rvrt_flow_adapter_zero_init_last is not None:
+        ldm_config.model.params.rvrt_flow_adapter_zero_init_last = bool(args.rvrt_flow_adapter_zero_init_last)
     if args.use_flow_guidance is not None:
         ldm_config.model.params.use_flow_guidance = bool(args.use_flow_guidance)
     if args.flow_backend:
@@ -230,6 +245,11 @@ def main():
         rvrt_flow_mode=args.rvrt_flow_mode,
         rvrt_raft_variant=args.rvrt_raft_variant,
         rvrt_raft_ckpt=args.rvrt_raft_ckpt,
+        rvrt_use_flow_adapter=bool(args.rvrt_use_flow_adapter) if args.rvrt_use_flow_adapter is not None else False,
+        rvrt_flow_adapter_hidden_channels=args.rvrt_flow_adapter_hidden_channels or 16,
+        rvrt_flow_adapter_zero_init_last=bool(args.rvrt_flow_adapter_zero_init_last)
+        if args.rvrt_flow_adapter_zero_init_last is not None
+        else True,
         use_ema=args.use_ema,
         strict_checkpoint=args.strict_checkpoint,
     )
