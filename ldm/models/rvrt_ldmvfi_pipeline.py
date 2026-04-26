@@ -157,10 +157,16 @@ class RVRTLDMVFIPipeline:
         devices = [self.device] if self.device.type == "cuda" else []
         return torch.random.fork_rng(devices=devices)
 
+    def _prepare_rvrt_sequence(self, seq):
+        if getattr(self.sr_frontend, "flow_mode", None) is not None and seq.shape[1] == 7:
+            return torch.cat([seq, seq.flip(1)], dim=1)
+        return seq
+
     @torch.no_grad()
     def super_resolve_neighbors(self, prev_lr, next_lr, lr_sequence=None, prev_index=None, next_index=None):
         if lr_sequence is not None:
             seq = lr_sequence.to(self.device)
+            seq = self._prepare_rvrt_sequence(seq)
             if prev_index is None:
                 prev_index = int(getattr(self.model, "rvrt_prev_index", 2))
             if next_index is None:

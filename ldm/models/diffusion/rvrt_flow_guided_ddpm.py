@@ -437,6 +437,11 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             seq = seq.permute(0, 1, 4, 2, 3).contiguous()
         return seq
 
+    def _prepare_rvrt_sequence(self, seq):
+        if self.sr_frontend_mode == "rvrt" and seq.shape[1] == 7:
+            return torch.cat([seq, seq.flip(1)], dim=1)
+        return seq
+
     def _super_resolve_neighbors(self, batch, bs=None):
         prev_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_prev_key).to(self.device)
         next_lr = super(LatentDiffusionVFI, self).get_input(batch, self.lr_next_key).to(self.device)
@@ -447,6 +452,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         lr_sequence = self._get_lr_sequence(batch, bs=bs)
         if lr_sequence is not None:
             seq = (lr_sequence + 1.0) / 2.0
+            seq = self._prepare_rvrt_sequence(seq)
             prev_index = self.rvrt_prev_index
             next_index = self.rvrt_next_index
         else:

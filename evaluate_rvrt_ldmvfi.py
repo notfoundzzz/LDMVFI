@@ -103,7 +103,7 @@ def load_triplet(folder, transform):
 
 
 def load_lr_sequence(folder, transform):
-    names = [f"im{i}.png" for i in range(1, 7)]
+    names = [f"im{i}.png" for i in range(1, 8)]
     paths = [join(folder, name) for name in names]
     if not all(os.path.exists(path) for path in paths):
         return None
