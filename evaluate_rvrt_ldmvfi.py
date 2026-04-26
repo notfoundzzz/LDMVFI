@@ -22,6 +22,8 @@ def restore_flow_guidance_metadata(ldm_config, ckpt_path):
     params = ldm_config.model.params
     if "sr_frontend_mode" in metadata:
         params.sr_frontend_mode = metadata["sr_frontend_mode"]
+    if "rvrt_flow_mode" in metadata:
+        params.rvrt_flow_mode = metadata["rvrt_flow_mode"]
     if "use_flow_guidance" in metadata:
         params.use_flow_guidance = bool(metadata["use_flow_guidance"])
     if "flow_guidance_strength" in metadata:
@@ -143,6 +145,7 @@ def main():
     parser.add_argument("--rvrt_root", default=None)
     parser.add_argument("--rvrt_task", default="002_RVRT_videosr_bi_Vimeo_14frames")
     parser.add_argument("--rvrt_ckpt", default=None)
+    parser.add_argument("--rvrt_flow_mode", choices=["spynet", "zero"], default="spynet")
     parser.add_argument("--use_ddim", dest="use_ddim", action="store_true")
     parser.add_argument("--use_ddpm", dest="use_ddim", action="store_false")
     parser.add_argument("--ddim_steps", type=int, default=200)
@@ -170,6 +173,7 @@ def main():
     ldm_config = OmegaConf.load(args.ldm_config)
     restore_flow_guidance_metadata(ldm_config, args.ldm_ckpt)
     ldm_config.model.params.sr_frontend_mode = args.sr_mode
+    ldm_config.model.params.rvrt_flow_mode = args.rvrt_flow_mode
     if args.use_flow_guidance is not None:
         ldm_config.model.params.use_flow_guidance = bool(args.use_flow_guidance)
     if args.flow_backend:
@@ -197,6 +201,7 @@ def main():
         rvrt_root=args.rvrt_root,
         rvrt_task=args.rvrt_task,
         rvrt_ckpt=args.rvrt_ckpt,
+        rvrt_flow_mode=args.rvrt_flow_mode,
         use_ema=args.use_ema,
         strict_checkpoint=args.strict_checkpoint,
     )
@@ -262,6 +267,7 @@ def main():
             "strict_checkpoint": args.strict_checkpoint,
             "use_flow_guidance": bool(ldm_config.model.params.get("use_flow_guidance", False)),
             "flow_guidance_strength": float(ldm_config.model.params.get("flow_guidance_strength", 0.0)),
+            "rvrt_flow_mode": args.rvrt_flow_mode,
             "flow_condition_mode": str(ldm_config.model.params.get("flow_condition_mode", "fused")),
             "flow_backend": str(ldm_config.model.params.get("flow_backend", "farneback")),
             "flow_raft_variant": str(ldm_config.model.params.get("flow_raft_variant", "large")),

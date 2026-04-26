@@ -62,17 +62,23 @@ class RVRTVideoSR(torch.nn.Module):
         rvrt_root,
         task="002_RVRT_videosr_bi_Vimeo_14frames",
         model_path=None,
+        rvrt_flow_mode="spynet",
         tile=(0, 0, 0),
         tile_overlap=(2, 20, 20),
     ):
         super().__init__()
         if task not in RVRT_TASK_CONFIGS:
             raise ValueError(f"Unsupported RVRT task: {task}")
+        self.flow_mode = str(rvrt_flow_mode)
+        if self.flow_mode not in ("spynet", "zero"):
+            raise ValueError(f"Unsupported RVRT flow mode: {self.flow_mode}")
         ensure_repo_path(rvrt_root)
         from models.network_rvrt import RVRT as net
 
         cfg = RVRT_TASK_CONFIGS[task].copy()
         self.scale = cfg.pop("scale")
+        if self.flow_mode != "spynet":
+            cfg["flow_mode"] = self.flow_mode
         self.model = net(**cfg)
         self.args = SimpleNamespace(
             task=task,
@@ -194,7 +200,16 @@ class RVRTVideoSR(torch.nn.Module):
         return output[:, :, :, : h_old * sf, : w_old * sf]
 
 
-def build_sr_frontend(sr_mode, scale, rvrt_root=None, rvrt_task=None, rvrt_ckpt=None, tile=(0, 0, 0), tile_overlap=(2, 20, 20)):
+def build_sr_frontend(
+    sr_mode,
+    scale,
+    rvrt_root=None,
+    rvrt_task=None,
+    rvrt_ckpt=None,
+    rvrt_flow_mode="spynet",
+    tile=(0, 0, 0),
+    tile_overlap=(2, 20, 20),
+):
     if sr_mode == "bicubic":
         return BicubicVideoSR(scale=scale)
     if sr_mode == "rvrt":
@@ -204,6 +219,7 @@ def build_sr_frontend(sr_mode, scale, rvrt_root=None, rvrt_task=None, rvrt_ckpt=
             rvrt_root=rvrt_root,
             task=rvrt_task or "002_RVRT_videosr_bi_Vimeo_14frames",
             model_path=rvrt_ckpt,
+            rvrt_flow_mode=rvrt_flow_mode,
             tile=tile,
             tile_overlap=tile_overlap,
         )

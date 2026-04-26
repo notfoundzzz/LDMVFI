@@ -23,6 +23,7 @@ class RVRTLDMVFIPipeline:
         rvrt_root=None,
         rvrt_task="002_RVRT_videosr_bi_Vimeo_14frames",
         rvrt_ckpt=None,
+        rvrt_flow_mode="spynet",
         device=None,
         tile=(0, 0, 0),
         tile_overlap=(2, 20, 20),
@@ -77,6 +78,7 @@ class RVRTLDMVFIPipeline:
             rvrt_root=rvrt_root,
             rvrt_task=rvrt_task,
             rvrt_ckpt=rvrt_ckpt,
+            rvrt_flow_mode=rvrt_flow_mode,
             tile=tile,
             tile_overlap=tile_overlap,
         )
@@ -95,7 +97,17 @@ class RVRTLDMVFIPipeline:
             return getattr(self.model, "latent_motion_phi_fusers", None) is None
         return False
 
-    def _build_eval_frontend(self, sr_mode, scale, rvrt_root, rvrt_task, rvrt_ckpt, tile, tile_overlap):
+    def _build_eval_frontend(
+        self,
+        sr_mode,
+        scale,
+        rvrt_root,
+        rvrt_task,
+        rvrt_ckpt,
+        rvrt_flow_mode,
+        tile,
+        tile_overlap,
+    ):
         model_frontend = getattr(self.model, "rvrt_frontend", None)
         if sr_mode == "rvrt" and model_frontend is not None:
             frontend = model_frontend.to(self.device).eval()
@@ -108,6 +120,7 @@ class RVRTLDMVFIPipeline:
             rvrt_root=rvrt_root,
             rvrt_task=rvrt_task,
             rvrt_ckpt=rvrt_ckpt,
+            rvrt_flow_mode=rvrt_flow_mode,
             tile=tile,
             tile_overlap=tile_overlap,
         )
