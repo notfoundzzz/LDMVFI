@@ -24,6 +24,8 @@ class RVRTLDMVFIPipeline:
         rvrt_task="002_RVRT_videosr_bi_Vimeo_14frames",
         rvrt_ckpt=None,
         rvrt_flow_mode="spynet",
+        rvrt_raft_variant="large",
+        rvrt_raft_ckpt=None,
         device=None,
         tile=(0, 0, 0),
         tile_overlap=(2, 20, 20),
@@ -79,6 +81,8 @@ class RVRTLDMVFIPipeline:
             rvrt_task=rvrt_task,
             rvrt_ckpt=rvrt_ckpt,
             rvrt_flow_mode=rvrt_flow_mode,
+            rvrt_raft_variant=rvrt_raft_variant,
+            rvrt_raft_ckpt=rvrt_raft_ckpt,
             tile=tile,
             tile_overlap=tile_overlap,
         )
@@ -105,6 +109,8 @@ class RVRTLDMVFIPipeline:
         rvrt_task,
         rvrt_ckpt,
         rvrt_flow_mode,
+        rvrt_raft_variant,
+        rvrt_raft_ckpt,
         tile,
         tile_overlap,
     ):
@@ -121,6 +127,8 @@ class RVRTLDMVFIPipeline:
             rvrt_task=rvrt_task,
             rvrt_ckpt=rvrt_ckpt,
             rvrt_flow_mode=rvrt_flow_mode,
+            rvrt_raft_variant=rvrt_raft_variant,
+            rvrt_raft_ckpt=rvrt_raft_ckpt,
             tile=tile,
             tile_overlap=tile_overlap,
         )

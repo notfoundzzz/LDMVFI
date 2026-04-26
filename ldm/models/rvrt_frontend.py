@@ -63,6 +63,8 @@ class RVRTVideoSR(torch.nn.Module):
         task="002_RVRT_videosr_bi_Vimeo_14frames",
         model_path=None,
         rvrt_flow_mode="spynet",
+        rvrt_raft_variant="large",
+        rvrt_raft_ckpt=None,
         tile=(0, 0, 0),
         tile_overlap=(2, 20, 20),
     ):
@@ -70,7 +72,7 @@ class RVRTVideoSR(torch.nn.Module):
         if task not in RVRT_TASK_CONFIGS:
             raise ValueError(f"Unsupported RVRT task: {task}")
         self.flow_mode = str(rvrt_flow_mode)
-        if self.flow_mode not in ("spynet", "zero"):
+        if self.flow_mode not in ("spynet", "zero", "raft"):
             raise ValueError(f"Unsupported RVRT flow mode: {self.flow_mode}")
         ensure_repo_path(rvrt_root)
         from models.network_rvrt import RVRT as net
@@ -79,6 +81,9 @@ class RVRTVideoSR(torch.nn.Module):
         self.scale = cfg.pop("scale")
         if self.flow_mode != "spynet":
             cfg["flow_mode"] = self.flow_mode
+        if self.flow_mode == "raft":
+            cfg["raft_variant"] = rvrt_raft_variant
+            cfg["raft_path"] = rvrt_raft_ckpt
         self.model = net(**cfg)
         self.args = SimpleNamespace(
             task=task,
@@ -207,6 +212,8 @@ def build_sr_frontend(
     rvrt_task=None,
     rvrt_ckpt=None,
     rvrt_flow_mode="spynet",
+    rvrt_raft_variant="large",
+    rvrt_raft_ckpt=None,
     tile=(0, 0, 0),
     tile_overlap=(2, 20, 20),
 ):
@@ -220,6 +227,8 @@ def build_sr_frontend(
             task=rvrt_task or "002_RVRT_videosr_bi_Vimeo_14frames",
             model_path=rvrt_ckpt,
             rvrt_flow_mode=rvrt_flow_mode,
+            rvrt_raft_variant=rvrt_raft_variant,
+            rvrt_raft_ckpt=rvrt_raft_ckpt,
             tile=tile,
             tile_overlap=tile_overlap,
         )

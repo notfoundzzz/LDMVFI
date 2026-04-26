@@ -24,6 +24,10 @@ def restore_flow_guidance_metadata(ldm_config, ckpt_path):
         params.sr_frontend_mode = metadata["sr_frontend_mode"]
     if "rvrt_flow_mode" in metadata:
         params.rvrt_flow_mode = metadata["rvrt_flow_mode"]
+    if "rvrt_raft_variant" in metadata:
+        params.rvrt_raft_variant = metadata["rvrt_raft_variant"]
+    if "rvrt_raft_ckpt" in metadata:
+        params.rvrt_raft_ckpt = metadata["rvrt_raft_ckpt"]
     if "use_flow_guidance" in metadata:
         params.use_flow_guidance = bool(metadata["use_flow_guidance"])
     if "flow_guidance_strength" in metadata:
@@ -145,7 +149,9 @@ def main():
     parser.add_argument("--rvrt_root", default=None)
     parser.add_argument("--rvrt_task", default="002_RVRT_videosr_bi_Vimeo_14frames")
     parser.add_argument("--rvrt_ckpt", default=None)
-    parser.add_argument("--rvrt_flow_mode", choices=["spynet", "zero"], default="spynet")
+    parser.add_argument("--rvrt_flow_mode", choices=["spynet", "zero", "raft"], default="spynet")
+    parser.add_argument("--rvrt_raft_variant", choices=["small", "large"], default="large")
+    parser.add_argument("--rvrt_raft_ckpt", default=None)
     parser.add_argument("--use_ddim", dest="use_ddim", action="store_true")
     parser.add_argument("--use_ddpm", dest="use_ddim", action="store_false")
     parser.add_argument("--ddim_steps", type=int, default=200)
@@ -174,6 +180,8 @@ def main():
     restore_flow_guidance_metadata(ldm_config, args.ldm_ckpt)
     ldm_config.model.params.sr_frontend_mode = args.sr_mode
     ldm_config.model.params.rvrt_flow_mode = args.rvrt_flow_mode
+    ldm_config.model.params.rvrt_raft_variant = args.rvrt_raft_variant
+    ldm_config.model.params.rvrt_raft_ckpt = args.rvrt_raft_ckpt
     if args.use_flow_guidance is not None:
         ldm_config.model.params.use_flow_guidance = bool(args.use_flow_guidance)
     if args.flow_backend:
@@ -202,6 +210,8 @@ def main():
         rvrt_task=args.rvrt_task,
         rvrt_ckpt=args.rvrt_ckpt,
         rvrt_flow_mode=args.rvrt_flow_mode,
+        rvrt_raft_variant=args.rvrt_raft_variant,
+        rvrt_raft_ckpt=args.rvrt_raft_ckpt,
         use_ema=args.use_ema,
         strict_checkpoint=args.strict_checkpoint,
     )
@@ -268,6 +278,8 @@ def main():
             "use_flow_guidance": bool(ldm_config.model.params.get("use_flow_guidance", False)),
             "flow_guidance_strength": float(ldm_config.model.params.get("flow_guidance_strength", 0.0)),
             "rvrt_flow_mode": args.rvrt_flow_mode,
+            "rvrt_raft_variant": args.rvrt_raft_variant,
+            "rvrt_raft_ckpt": args.rvrt_raft_ckpt,
             "flow_condition_mode": str(ldm_config.model.params.get("flow_condition_mode", "fused")),
             "flow_backend": str(ldm_config.model.params.get("flow_backend", "farneback")),
             "flow_raft_variant": str(ldm_config.model.params.get("flow_raft_variant", "large")),

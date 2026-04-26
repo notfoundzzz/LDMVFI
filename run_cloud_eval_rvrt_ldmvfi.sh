@@ -34,6 +34,8 @@ RVRT_ROOT="${RVRT_ROOT:-/data/Shenzhen/zhahongli/RVRT}"
 RVRT_TASK="${RVRT_TASK:-002_RVRT_videosr_bi_Vimeo_14frames}"
 RVRT_CKPT="${RVRT_CKPT:-$RVRT_ROOT/model_zoo/rvrt/${RVRT_TASK}.pth}"
 RVRT_FLOW_MODE="${RVRT_FLOW_MODE:-spynet}"
+RVRT_RAFT_VARIANT="${RVRT_RAFT_VARIANT:-large}"
+RVRT_RAFT_CKPT="${RVRT_RAFT_CKPT:-}"
 MAX_SAMPLES="${MAX_SAMPLES:-0}"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/eval_results_rvrt_ldmvfi/${SPLIT}/${SR_MODE}}"
 LOG_ROOT="${LOG_ROOT:-$ROOT_DIR/logs}"
@@ -82,6 +84,8 @@ echo "rvrt_root=$RVRT_ROOT"
 echo "rvrt_task=$RVRT_TASK"
 echo "rvrt_ckpt=$RVRT_CKPT"
 echo "rvrt_flow_mode=$RVRT_FLOW_MODE"
+echo "rvrt_raft_variant=$RVRT_RAFT_VARIANT"
+echo "rvrt_raft_ckpt=${RVRT_RAFT_CKPT:-default}"
 echo "max_samples=$MAX_SAMPLES"
 echo "save_images=$SAVE_IMAGES"
 echo "save_sr_images=$SAVE_SR_IMAGES"
@@ -143,6 +147,7 @@ for SPLIT_NAME in "${SPLIT_ARRAY[@]}"; do
     --rvrt_task "$RVRT_TASK" \
     --rvrt_ckpt "$RVRT_CKPT" \
     --rvrt_flow_mode "$RVRT_FLOW_MODE" \
+    --rvrt_raft_variant "$RVRT_RAFT_VARIANT" \
     --max_samples "$MAX_SAMPLES" \
     --summary_json "$SUMMARY_JSON" \
     --ddim_eta "$DDIM_ETA" \
@@ -199,6 +204,9 @@ for SPLIT_NAME in "${SPLIT_ARRAY[@]}"; do
   fi
   if [[ -n "$FLOW_RAFT_CKPT" ]]; then
     CMD+=(--flow_raft_ckpt "$FLOW_RAFT_CKPT")
+  fi
+  if [[ -n "$RVRT_RAFT_CKPT" ]]; then
+    CMD+=(--rvrt_raft_ckpt "$RVRT_RAFT_CKPT")
   fi
 
   "${CMD[@]}"

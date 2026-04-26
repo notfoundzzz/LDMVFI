@@ -32,6 +32,8 @@ BASE_LDM_CKPT="${BASE_LDM_CKPT:-/data/Shenzhen/zhahongli/models/ldmvfi/ldmvfi-vq
 RVRT_ROOT="${RVRT_ROOT:-/data/Shenzhen/zhahongli/RVRT}"
 RVRT_CKPT="${RVRT_CKPT:-$RVRT_ROOT/model_zoo/rvrt/002_RVRT_videosr_bi_Vimeo_14frames.pth}"
 RVRT_FLOW_MODE="${RVRT_FLOW_MODE:-}"
+RVRT_RAFT_VARIANT="${RVRT_RAFT_VARIANT:-}"
+RVRT_RAFT_CKPT="${RVRT_RAFT_CKPT:-}"
 SR_FRONTEND_MODE="${SR_FRONTEND_MODE:-}"
 RVRT_TRAIN_MODE="${RVRT_TRAIN_MODE:-}"
 RVRT_TRAIN_PATTERNS="${RVRT_TRAIN_PATTERNS:-}"
@@ -93,6 +95,8 @@ echo "base_ldm_ckpt=$BASE_LDM_CKPT"
 echo "rvrt_root=$RVRT_ROOT"
 echo "rvrt_ckpt=$RVRT_CKPT"
 echo "rvrt_flow_mode=${RVRT_FLOW_MODE:-default}"
+echo "rvrt_raft_variant=${RVRT_RAFT_VARIANT:-default}"
+echo "rvrt_raft_ckpt=${RVRT_RAFT_CKPT:-default}"
 echo "sr_frontend_mode=${SR_FRONTEND_MODE:-default}"
 echo "rvrt_train_mode=${RVRT_TRAIN_MODE:-default}"
 echo "rvrt_train_patterns=${RVRT_TRAIN_PATTERNS:-default}"
@@ -168,6 +172,12 @@ if [[ -n "$RVRT_LR" ]]; then
 fi
 if [[ -n "$RVRT_FLOW_MODE" ]]; then
   CMD+=(model.params.rvrt_flow_mode="$RVRT_FLOW_MODE")
+fi
+if [[ -n "$RVRT_RAFT_VARIANT" ]]; then
+  CMD+=(model.params.rvrt_raft_variant="$RVRT_RAFT_VARIANT")
+fi
+if [[ -n "$RVRT_RAFT_CKPT" ]]; then
+  CMD+=(model.params.rvrt_raft_ckpt="$RVRT_RAFT_CKPT")
 fi
 
 if [[ -n "$FLOW_CONDITION_MODE" ]]; then

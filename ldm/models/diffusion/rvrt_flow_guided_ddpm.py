@@ -59,6 +59,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         rvrt_task="002_RVRT_videosr_bi_Vimeo_14frames",
         rvrt_ckpt=None,
         rvrt_flow_mode="spynet",
+        rvrt_raft_variant="large",
+        rvrt_raft_ckpt=None,
         sr_frontend_mode="rvrt",
         rvrt_tile=(0, 0, 0),
         rvrt_tile_overlap=(2, 20, 20),
@@ -97,6 +99,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         self.cond_flow_key = cond_flow_key
         self.sr_frontend_mode = str(sr_frontend_mode)
         self.rvrt_flow_mode = str(rvrt_flow_mode)
+        self.rvrt_raft_variant = str(rvrt_raft_variant)
+        self.rvrt_raft_ckpt = rvrt_raft_ckpt
         self.rvrt_train_mode = self._normalize_rvrt_train_mode(rvrt_train_mode)
         self.rvrt_lr = float(rvrt_lr)
         self.use_flow_guidance = bool(use_flow_guidance)
@@ -155,6 +159,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             rvrt_task=rvrt_task,
             rvrt_ckpt=rvrt_ckpt,
             rvrt_flow_mode=self.rvrt_flow_mode,
+            rvrt_raft_variant=self.rvrt_raft_variant,
+            rvrt_raft_ckpt=self.rvrt_raft_ckpt,
             tile=tuple(rvrt_tile),
             tile_overlap=tuple(rvrt_tile_overlap),
         )
@@ -185,6 +191,11 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             print(f"SR frontend mode: {self.sr_frontend_mode}")
             if self.sr_frontend_mode == "rvrt":
                 print(f"RVRT internal flow mode: {self.rvrt_flow_mode}")
+                if self.rvrt_flow_mode == "raft":
+                    print(
+                        f"RVRT internal RAFT: variant={self.rvrt_raft_variant}, "
+                        f"ckpt={self.rvrt_raft_ckpt}"
+                    )
             if self._rvrt_requires_grad():
                 print(
                     "RVRT frontend partial finetune active: "
@@ -323,6 +334,8 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         checkpoint["rvrt_flow_guidance_metadata"] = {
             "sr_frontend_mode": self.sr_frontend_mode,
             "rvrt_flow_mode": self.rvrt_flow_mode,
+            "rvrt_raft_variant": self.rvrt_raft_variant,
+            "rvrt_raft_ckpt": self.rvrt_raft_ckpt,
             "use_flow_guidance": self.use_flow_guidance,
             "flow_guidance_strength": self.flow_guidance_strength,
             "flow_condition_mode": self.flow_condition_mode,
