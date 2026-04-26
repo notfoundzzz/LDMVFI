@@ -179,6 +179,9 @@ def main():
     ldm_config = OmegaConf.load(args.ldm_config)
     restore_flow_guidance_metadata(ldm_config, args.ldm_ckpt)
     ldm_config.model.params.sr_frontend_mode = args.sr_mode
+    ldm_config.model.params.rvrt_root = args.rvrt_root
+    ldm_config.model.params.rvrt_task = args.rvrt_task
+    ldm_config.model.params.rvrt_ckpt = args.rvrt_ckpt
     ldm_config.model.params.rvrt_flow_mode = args.rvrt_flow_mode
     ldm_config.model.params.rvrt_raft_variant = args.rvrt_raft_variant
     ldm_config.model.params.rvrt_raft_ckpt = args.rvrt_raft_ckpt
