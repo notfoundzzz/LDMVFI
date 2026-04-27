@@ -66,6 +66,7 @@ class RVRTVideoSR(torch.nn.Module):
         rvrt_raft_variant="large",
         rvrt_raft_ckpt=None,
         rvrt_use_flow_adapter=False,
+        rvrt_adapter_ckpt=None,
         rvrt_flow_adapter_hidden_channels=16,
         rvrt_flow_adapter_zero_init_last=True,
         rvrt_flow_adapter_max_residue_magnitude=1.0,
@@ -76,7 +77,7 @@ class RVRTVideoSR(torch.nn.Module):
         if task not in RVRT_TASK_CONFIGS:
             raise ValueError(f"Unsupported RVRT task: {task}")
         self.flow_mode = str(rvrt_flow_mode)
-        if self.flow_mode not in ("spynet", "zero", "raft"):
+        if self.flow_mode not in ("spynet", "zero", "raft", "spynet_raft_residual"):
             raise ValueError(f"Unsupported RVRT flow mode: {self.flow_mode}")
         ensure_repo_path(rvrt_root)
         from models.network_rvrt import RVRT as net
@@ -85,7 +86,7 @@ class RVRTVideoSR(torch.nn.Module):
         self.scale = cfg.pop("scale")
         if self.flow_mode != "spynet":
             cfg["flow_mode"] = self.flow_mode
-        if self.flow_mode == "raft":
+        if self.flow_mode in ("raft", "spynet_raft_residual"):
             cfg["raft_variant"] = rvrt_raft_variant
             cfg["raft_path"] = rvrt_raft_ckpt
             cfg["use_flow_adapter"] = rvrt_use_flow_adapter
@@ -110,7 +111,7 @@ class RVRTVideoSR(torch.nn.Module):
             )
         pretrained = torch.load(model_path, map_location="cpu")
         state_dict = pretrained["params"] if "params" in pretrained else pretrained
-        if self.flow_mode == "raft" and rvrt_use_flow_adapter:
+        if self.flow_mode in ("raft", "spynet_raft_residual") and rvrt_use_flow_adapter:
             missing, unexpected = self.model.load_state_dict(state_dict, strict=False)
             unexpected = [key for key in unexpected if not key.startswith("flow_adapter.")]
             missing = [key for key in missing if not key.startswith("flow_adapter.")]
@@ -119,11 +120,38 @@ class RVRTVideoSR(torch.nn.Module):
                     "Failed to load RVRT checkpoint with flow adapter. "
                     f"missing={missing[:10]}, unexpected={unexpected[:10]}"
                 )
+            if rvrt_adapter_ckpt:
+                self._load_adapter_checkpoint(rvrt_adapter_ckpt)
         else:
             self.model.load_state_dict(state_dict, strict=True)
         self.model.eval()
         for param in self.model.parameters():
             param.requires_grad = False
+
+    def _load_adapter_checkpoint(self, ckpt_path):
+        if not os.path.exists(ckpt_path):
+            raise FileNotFoundError(f"RVRT adapter checkpoint not found: {ckpt_path}")
+        payload = torch.load(ckpt_path, map_location="cpu")
+        state_dict = payload.get("params", payload.get("state_dict", payload)) if isinstance(payload, dict) else payload
+        if any(key.startswith("module.") for key in state_dict):
+            state_dict = {key.replace("module.", "", 1): value for key, value in state_dict.items()}
+        model_state = self.model.state_dict()
+        prefixes = ("flow_adapter.", "deform_align.")
+        adapter_keys = [key for key in state_dict if key.startswith(prefixes)]
+        incompatible = [
+            key for key in adapter_keys
+            if key not in model_state or tuple(model_state[key].shape) != tuple(state_dict[key].shape)
+        ]
+        if incompatible:
+            raise RuntimeError(
+                "RVRT adapter checkpoint is incompatible with the selected frontend. "
+                f"First keys: {incompatible[:10]}"
+            )
+        filtered = {key: value for key, value in state_dict.items() if key.startswith(prefixes)}
+        if not filtered:
+            raise RuntimeError(f"No RVRT adapter parameters found in {ckpt_path}")
+        self.model.load_state_dict(filtered, strict=False)
+        print(f"Loaded RVRT adapter checkpoint from {ckpt_path} with {len(filtered)} tensors")
 
     def _grad_context(self):
         return nullcontext() if any(p.requires_grad for p in self.model.parameters()) else torch.no_grad()
@@ -234,6 +262,7 @@ def build_sr_frontend(
     rvrt_raft_variant="large",
     rvrt_raft_ckpt=None,
     rvrt_use_flow_adapter=False,
+    rvrt_adapter_ckpt=None,
     rvrt_flow_adapter_hidden_channels=16,
     rvrt_flow_adapter_zero_init_last=True,
     rvrt_flow_adapter_max_residue_magnitude=1.0,
@@ -253,6 +282,7 @@ def build_sr_frontend(
             rvrt_raft_variant=rvrt_raft_variant,
             rvrt_raft_ckpt=rvrt_raft_ckpt,
             rvrt_use_flow_adapter=rvrt_use_flow_adapter,
+            rvrt_adapter_ckpt=rvrt_adapter_ckpt,
             rvrt_flow_adapter_hidden_channels=rvrt_flow_adapter_hidden_channels,
             rvrt_flow_adapter_zero_init_last=rvrt_flow_adapter_zero_init_last,
             rvrt_flow_adapter_max_residue_magnitude=rvrt_flow_adapter_max_residue_magnitude,

@@ -61,6 +61,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         rvrt_flow_mode="spynet",
         rvrt_raft_variant="large",
         rvrt_raft_ckpt=None,
+        rvrt_adapter_ckpt=None,
         rvrt_use_flow_adapter=False,
         rvrt_flow_adapter_hidden_channels=16,
         rvrt_flow_adapter_zero_init_last=True,
@@ -112,6 +113,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
         self.rvrt_flow_mode = str(rvrt_flow_mode)
         self.rvrt_raft_variant = str(rvrt_raft_variant)
         self.rvrt_raft_ckpt = rvrt_raft_ckpt
+        self.rvrt_adapter_ckpt = rvrt_adapter_ckpt
         self.rvrt_use_flow_adapter = bool(rvrt_use_flow_adapter)
         self.rvrt_flow_adapter_hidden_channels = int(rvrt_flow_adapter_hidden_channels)
         self.rvrt_flow_adapter_zero_init_last = bool(rvrt_flow_adapter_zero_init_last)
@@ -177,6 +179,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             rvrt_flow_mode=self.rvrt_flow_mode,
             rvrt_raft_variant=self.rvrt_raft_variant,
             rvrt_raft_ckpt=self.rvrt_raft_ckpt,
+            rvrt_adapter_ckpt=self.rvrt_adapter_ckpt,
             rvrt_use_flow_adapter=self.rvrt_use_flow_adapter,
             rvrt_flow_adapter_hidden_channels=self.rvrt_flow_adapter_hidden_channels,
             rvrt_flow_adapter_zero_init_last=self.rvrt_flow_adapter_zero_init_last,
@@ -220,12 +223,13 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
                     f"key={self.lr_sequence_key}, prev_index={self.rvrt_prev_index}, "
                     f"next_index={self.rvrt_next_index}"
                 )
-                if self.rvrt_flow_mode == "raft":
+                if self.rvrt_flow_mode in ("raft", "spynet_raft_residual"):
                     print(
                         f"RVRT internal RAFT: variant={self.rvrt_raft_variant}, "
                         f"ckpt={self.rvrt_raft_ckpt}, "
                         f"flow_adapter={self.rvrt_use_flow_adapter}, "
-                        f"adapter_max_residue={self.rvrt_flow_adapter_max_residue_magnitude:.3f}"
+                        f"adapter_max_residue={self.rvrt_flow_adapter_max_residue_magnitude:.3f}, "
+                        f"adapter_ckpt={self.rvrt_adapter_ckpt}"
                     )
             if self._rvrt_requires_grad():
                 print(
@@ -347,10 +351,10 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             self.rvrt_frontend.eval()
             return
         if self.rvrt_train_mode == "flow_adapt":
-            if self.rvrt_flow_mode != "raft" or not self.rvrt_use_flow_adapter:
+            if self.rvrt_flow_mode not in ("raft", "spynet_raft_residual") or not self.rvrt_use_flow_adapter:
                 raise ValueError(
                     "rvrt_train_mode=flow_adapt requires rvrt_flow_mode=raft "
-                    "and rvrt_use_flow_adapter=True"
+                    "or spynet_raft_residual and rvrt_use_flow_adapter=True"
                 )
 
         trainable_names = []
@@ -380,6 +384,7 @@ class LatentDiffusionVFIRVRTFlowGuided(LatentDiffusionVFI):
             "rvrt_flow_mode": self.rvrt_flow_mode,
             "rvrt_raft_variant": self.rvrt_raft_variant,
             "rvrt_raft_ckpt": self.rvrt_raft_ckpt,
+            "rvrt_adapter_ckpt": self.rvrt_adapter_ckpt,
             "rvrt_use_flow_adapter": self.rvrt_use_flow_adapter,
             "rvrt_flow_adapter_hidden_channels": self.rvrt_flow_adapter_hidden_channels,
             "rvrt_flow_adapter_zero_init_last": self.rvrt_flow_adapter_zero_init_last,

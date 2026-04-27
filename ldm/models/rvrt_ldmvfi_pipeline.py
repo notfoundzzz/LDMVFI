@@ -26,6 +26,7 @@ class RVRTLDMVFIPipeline:
         rvrt_flow_mode="spynet",
         rvrt_raft_variant="large",
         rvrt_raft_ckpt=None,
+        rvrt_adapter_ckpt=None,
         rvrt_use_flow_adapter=False,
         rvrt_flow_adapter_hidden_channels=16,
         rvrt_flow_adapter_zero_init_last=True,
@@ -54,15 +55,16 @@ class RVRTLDMVFIPipeline:
             )
 
         missing, unexpected = self.model.load_state_dict(state_dict, strict=False)
-        if unexpected and self.strict_checkpoint:
+        disallowed_unexpected = [key for key in unexpected if not self._is_allowed_unexpected_key(key)]
+        if disallowed_unexpected and self.strict_checkpoint:
             raise ValueError(
                 "Unexpected checkpoint keys were found while loading the diffusion model. "
-                f"First keys: {unexpected[:10]}"
+                f"First keys: {disallowed_unexpected[:10]}"
             )
-        if unexpected and not self.strict_checkpoint:
+        if disallowed_unexpected and not self.strict_checkpoint:
             print(
                 "Ignoring unexpected checkpoint keys because strict checkpoint loading is disabled. "
-                f"First keys: {unexpected[:10]}"
+                f"First keys: {disallowed_unexpected[:10]}"
             )
         if model_has_lora:
             missing_lora = [key for key in missing if "lora_" in key]
@@ -77,6 +79,8 @@ class RVRTLDMVFIPipeline:
                 "Checkpoint is missing required keys for the selected evaluation config. "
                 f"First keys: {disallowed_missing[:10]}"
             )
+        if rvrt_adapter_ckpt and hasattr(getattr(self.model, "rvrt_frontend", None), "_load_adapter_checkpoint"):
+            self.model.rvrt_frontend._load_adapter_checkpoint(rvrt_adapter_ckpt)
         self.model = self.model.to(self.device).eval()
         self.sr_frontend, self.sr_frontend_source = self._build_eval_frontend(
             sr_mode=sr_mode,
@@ -87,6 +91,7 @@ class RVRTLDMVFIPipeline:
             rvrt_flow_mode=rvrt_flow_mode,
             rvrt_raft_variant=rvrt_raft_variant,
             rvrt_raft_ckpt=rvrt_raft_ckpt,
+            rvrt_adapter_ckpt=rvrt_adapter_ckpt,
             rvrt_use_flow_adapter=rvrt_use_flow_adapter,
             rvrt_flow_adapter_hidden_channels=rvrt_flow_adapter_hidden_channels,
             rvrt_flow_adapter_zero_init_last=rvrt_flow_adapter_zero_init_last,
@@ -97,6 +102,11 @@ class RVRTLDMVFIPipeline:
         print(f"Evaluation RVRT source: {self.sr_frontend_source}")
 
     def _is_allowed_missing_key(self, key):
+        if key.startswith("rvrt_frontend."):
+            # The RVRT frontend is initialized from its own checkpoint before
+            # the LDM checkpoint is loaded, so missing frontend keys here do
+            # not indicate missing diffusion weights.
+            return True
         if key.startswith("model_ema.") and not self.use_ema:
             return True
         if key == "flow_condition_gate":
@@ -109,6 +119,9 @@ class RVRTLDMVFIPipeline:
             return getattr(self.model, "latent_motion_phi_fusers", None) is None
         return False
 
+    def _is_allowed_unexpected_key(self, key):
+        return key.startswith("rvrt_frontend.")
+
     def _build_eval_frontend(
         self,
         sr_mode,
@@ -119,6 +132,7 @@ class RVRTLDMVFIPipeline:
         rvrt_flow_mode,
         rvrt_raft_variant,
         rvrt_raft_ckpt,
+        rvrt_adapter_ckpt,
         rvrt_use_flow_adapter,
         rvrt_flow_adapter_hidden_channels,
         rvrt_flow_adapter_zero_init_last,
@@ -141,6 +155,7 @@ class RVRTLDMVFIPipeline:
             rvrt_flow_mode=rvrt_flow_mode,
             rvrt_raft_variant=rvrt_raft_variant,
             rvrt_raft_ckpt=rvrt_raft_ckpt,
+            rvrt_adapter_ckpt=rvrt_adapter_ckpt,
             rvrt_use_flow_adapter=rvrt_use_flow_adapter,
             rvrt_flow_adapter_hidden_channels=rvrt_flow_adapter_hidden_channels,
             rvrt_flow_adapter_zero_init_last=rvrt_flow_adapter_zero_init_last,

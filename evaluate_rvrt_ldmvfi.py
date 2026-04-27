@@ -30,6 +30,8 @@ def restore_flow_guidance_metadata(ldm_config, ckpt_path):
         params.rvrt_raft_ckpt = metadata["rvrt_raft_ckpt"]
     if "rvrt_use_flow_adapter" in metadata:
         params.rvrt_use_flow_adapter = bool(metadata["rvrt_use_flow_adapter"])
+    if "rvrt_adapter_ckpt" in metadata:
+        params.rvrt_adapter_ckpt = metadata["rvrt_adapter_ckpt"]
     if "rvrt_flow_adapter_hidden_channels" in metadata:
         params.rvrt_flow_adapter_hidden_channels = int(metadata["rvrt_flow_adapter_hidden_channels"])
     if "rvrt_flow_adapter_zero_init_last" in metadata:
@@ -172,10 +174,15 @@ def main():
     parser.add_argument("--rvrt_root", default=None)
     parser.add_argument("--rvrt_task", default="002_RVRT_videosr_bi_Vimeo_14frames")
     parser.add_argument("--rvrt_ckpt", default=None)
-    parser.add_argument("--rvrt_flow_mode", choices=["spynet", "zero", "raft"], default="spynet")
+    parser.add_argument(
+        "--rvrt_flow_mode",
+        choices=["spynet", "zero", "raft", "spynet_raft_residual"],
+        default="spynet",
+    )
     parser.add_argument("--rvrt_raft_variant", choices=["small", "large"], default="large")
     parser.add_argument("--rvrt_raft_ckpt", default=None)
     parser.add_argument("--rvrt_use_flow_adapter", type=int, choices=[0, 1], default=None)
+    parser.add_argument("--rvrt_adapter_ckpt", default=None)
     parser.add_argument("--rvrt_flow_adapter_hidden_channels", type=int, default=None)
     parser.add_argument("--rvrt_flow_adapter_zero_init_last", type=int, choices=[0, 1], default=None)
     parser.add_argument("--rvrt_flow_adapter_max_residue_magnitude", type=float, default=None)
@@ -212,6 +219,7 @@ def main():
     ldm_config.model.params.rvrt_flow_mode = args.rvrt_flow_mode
     ldm_config.model.params.rvrt_raft_variant = args.rvrt_raft_variant
     ldm_config.model.params.rvrt_raft_ckpt = args.rvrt_raft_ckpt
+    ldm_config.model.params.rvrt_adapter_ckpt = args.rvrt_adapter_ckpt
     if args.rvrt_use_flow_adapter is not None:
         ldm_config.model.params.rvrt_use_flow_adapter = bool(args.rvrt_use_flow_adapter)
     if args.rvrt_flow_adapter_hidden_channels is not None:
@@ -250,12 +258,15 @@ def main():
         rvrt_flow_mode=args.rvrt_flow_mode,
         rvrt_raft_variant=args.rvrt_raft_variant,
         rvrt_raft_ckpt=args.rvrt_raft_ckpt,
+        rvrt_adapter_ckpt=args.rvrt_adapter_ckpt,
         rvrt_use_flow_adapter=bool(args.rvrt_use_flow_adapter) if args.rvrt_use_flow_adapter is not None else False,
         rvrt_flow_adapter_hidden_channels=args.rvrt_flow_adapter_hidden_channels or 16,
         rvrt_flow_adapter_zero_init_last=bool(args.rvrt_flow_adapter_zero_init_last)
         if args.rvrt_flow_adapter_zero_init_last is not None
         else True,
-        rvrt_flow_adapter_max_residue_magnitude=args.rvrt_flow_adapter_max_residue_magnitude or 1.0,
+        rvrt_flow_adapter_max_residue_magnitude=args.rvrt_flow_adapter_max_residue_magnitude
+        if args.rvrt_flow_adapter_max_residue_magnitude is not None
+        else 1.0,
         use_ema=args.use_ema,
         strict_checkpoint=args.strict_checkpoint,
     )
@@ -326,6 +337,13 @@ def main():
             "rvrt_flow_mode": args.rvrt_flow_mode,
             "rvrt_raft_variant": args.rvrt_raft_variant,
             "rvrt_raft_ckpt": args.rvrt_raft_ckpt,
+            "rvrt_adapter_ckpt": args.rvrt_adapter_ckpt,
+            "rvrt_use_flow_adapter": bool(args.rvrt_use_flow_adapter) if args.rvrt_use_flow_adapter is not None else False,
+            "rvrt_flow_adapter_hidden_channels": args.rvrt_flow_adapter_hidden_channels,
+            "rvrt_flow_adapter_zero_init_last": bool(args.rvrt_flow_adapter_zero_init_last)
+            if args.rvrt_flow_adapter_zero_init_last is not None
+            else None,
+            "rvrt_flow_adapter_max_residue_magnitude": args.rvrt_flow_adapter_max_residue_magnitude,
             "flow_condition_mode": str(ldm_config.model.params.get("flow_condition_mode", "fused")),
             "flow_backend": str(ldm_config.model.params.get("flow_backend", "farneback")),
             "flow_raft_variant": str(ldm_config.model.params.get("flow_raft_variant", "large")),
