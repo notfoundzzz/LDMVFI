@@ -14,6 +14,11 @@ import utility
 from ldm.models.rvrt_ldmvfi_pipeline import RVRTLDMVFIPipeline
 
 
+def config_accepts_rvrt_frontend_params(ldm_config):
+    target = str(ldm_config.model.get("target", ""))
+    return "LatentDiffusionVFIRVRTFlowGuided" in target or "rvrt_flow_guided_ddpm" in target
+
+
 def restore_flow_guidance_metadata(ldm_config, ckpt_path):
     state = torch.load(ckpt_path, map_location="cpu")
     metadata = state.get("rvrt_flow_guidance_metadata", None)
@@ -211,33 +216,35 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     ldm_config = OmegaConf.load(args.ldm_config)
-    restore_flow_guidance_metadata(ldm_config, args.ldm_ckpt)
-    ldm_config.model.params.sr_frontend_mode = args.sr_mode
-    ldm_config.model.params.rvrt_root = args.rvrt_root
-    ldm_config.model.params.rvrt_task = args.rvrt_task
-    ldm_config.model.params.rvrt_ckpt = args.rvrt_ckpt
-    ldm_config.model.params.rvrt_flow_mode = args.rvrt_flow_mode
-    ldm_config.model.params.rvrt_raft_variant = args.rvrt_raft_variant
-    ldm_config.model.params.rvrt_raft_ckpt = args.rvrt_raft_ckpt
-    ldm_config.model.params.rvrt_adapter_ckpt = args.rvrt_adapter_ckpt
-    if args.rvrt_use_flow_adapter is not None:
-        ldm_config.model.params.rvrt_use_flow_adapter = bool(args.rvrt_use_flow_adapter)
-    if args.rvrt_flow_adapter_hidden_channels is not None:
-        ldm_config.model.params.rvrt_flow_adapter_hidden_channels = args.rvrt_flow_adapter_hidden_channels
-    if args.rvrt_flow_adapter_zero_init_last is not None:
-        ldm_config.model.params.rvrt_flow_adapter_zero_init_last = bool(args.rvrt_flow_adapter_zero_init_last)
-    if args.rvrt_flow_adapter_max_residue_magnitude is not None:
-        ldm_config.model.params.rvrt_flow_adapter_max_residue_magnitude = args.rvrt_flow_adapter_max_residue_magnitude
-    if args.use_flow_guidance is not None:
-        ldm_config.model.params.use_flow_guidance = bool(args.use_flow_guidance)
-    if args.flow_backend:
-        ldm_config.model.params.flow_backend = args.flow_backend
-    if args.flow_condition_mode:
-        ldm_config.model.params.flow_condition_mode = args.flow_condition_mode
-    if args.flow_raft_variant:
-        ldm_config.model.params.flow_raft_variant = args.flow_raft_variant
-    if args.flow_raft_ckpt:
-        ldm_config.model.params.flow_raft_ckpt = args.flow_raft_ckpt
+    accepts_rvrt_frontend_params = config_accepts_rvrt_frontend_params(ldm_config)
+    if accepts_rvrt_frontend_params:
+        restore_flow_guidance_metadata(ldm_config, args.ldm_ckpt)
+        ldm_config.model.params.sr_frontend_mode = args.sr_mode
+        ldm_config.model.params.rvrt_root = args.rvrt_root
+        ldm_config.model.params.rvrt_task = args.rvrt_task
+        ldm_config.model.params.rvrt_ckpt = args.rvrt_ckpt
+        ldm_config.model.params.rvrt_flow_mode = args.rvrt_flow_mode
+        ldm_config.model.params.rvrt_raft_variant = args.rvrt_raft_variant
+        ldm_config.model.params.rvrt_raft_ckpt = args.rvrt_raft_ckpt
+        ldm_config.model.params.rvrt_adapter_ckpt = args.rvrt_adapter_ckpt
+        if args.rvrt_use_flow_adapter is not None:
+            ldm_config.model.params.rvrt_use_flow_adapter = bool(args.rvrt_use_flow_adapter)
+        if args.rvrt_flow_adapter_hidden_channels is not None:
+            ldm_config.model.params.rvrt_flow_adapter_hidden_channels = args.rvrt_flow_adapter_hidden_channels
+        if args.rvrt_flow_adapter_zero_init_last is not None:
+            ldm_config.model.params.rvrt_flow_adapter_zero_init_last = bool(args.rvrt_flow_adapter_zero_init_last)
+        if args.rvrt_flow_adapter_max_residue_magnitude is not None:
+            ldm_config.model.params.rvrt_flow_adapter_max_residue_magnitude = args.rvrt_flow_adapter_max_residue_magnitude
+        if args.use_flow_guidance is not None:
+            ldm_config.model.params.use_flow_guidance = bool(args.use_flow_guidance)
+        if args.flow_backend:
+            ldm_config.model.params.flow_backend = args.flow_backend
+        if args.flow_condition_mode:
+            ldm_config.model.params.flow_condition_mode = args.flow_condition_mode
+        if args.flow_raft_variant:
+            ldm_config.model.params.flow_raft_variant = args.flow_raft_variant
+        if args.flow_raft_ckpt:
+            ldm_config.model.params.flow_raft_ckpt = args.flow_raft_ckpt
     inferred_lora_rank = infer_lora_rank_from_checkpoint(args.ldm_ckpt)
     if inferred_lora_rank is not None:
         cfg_rank = ldm_config.model.params.get("lora_rank", None)
