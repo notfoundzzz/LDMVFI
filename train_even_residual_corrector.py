@@ -6,9 +6,12 @@ from os.path import join
 
 import numpy as np
 import torch
+import torch.distributed as dist
 from omegaconf import OmegaConf
 from PIL import Image
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, Dataset
+from torch.utils.data.distributed import DistributedSampler
 from torchvision import transforms
 
 from evaluate_rvrt_ldmvfi import (
@@ -21,6 +24,21 @@ from evaluate_rvrt_ldmvfi import (
 from ldm.models.even_residual_corrector import EvenFrameResidualCorrector
 from ldm.models.flow_guidance import build_flow_aligned_input_pair
 from ldm.models.rvrt_ldmvfi_pipeline import RVRTLDMVFIPipeline
+
+
+def init_distributed():
+    if "RANK" not in os.environ or "WORLD_SIZE" not in os.environ:
+        return False, 0, 1, 0
+    dist.init_process_group(backend="nccl")
+    rank = dist.get_rank()
+    world_size = dist.get_world_size()
+    local_rank = int(os.environ.get("LOCAL_RANK", os.environ.get("local_rank", 0)))
+    torch.cuda.set_device(local_rank)
+    return True, rank, world_size, local_rank
+
+
+def is_main_process(rank):
+    return rank == 0
 
 
 def charbonnier_loss(pred, target, eps=1e-6):
@@ -165,8 +183,9 @@ def validate(pipeline, corrector, loader, args, device):
 
 def save_checkpoint(corrector, optimizer, args, step, out_dir):
     os.makedirs(out_dir, exist_ok=True)
+    raw_corrector = corrector.module if isinstance(corrector, DDP) else corrector
     payload = {
-        "state_dict": corrector.state_dict(),
+        "state_dict": raw_corrector.state_dict(),
         "optimizer": optimizer.state_dict(),
         "step": step,
         "args": {
@@ -221,15 +240,19 @@ def main():
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--use_raw_weights", action="store_true")
     parser.add_argument("--allow_incomplete_ckpt", action="store_true")
+    parser.add_argument("--local_rank", type=int, default=0)
     args = parser.parse_args()
 
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    os.makedirs(args.out_dir, exist_ok=True)
-    with open(join(args.out_dir, "args.json"), "w", encoding="utf-8") as f:
-        json.dump(vars(args), f, indent=2)
+    distributed, rank, world_size, local_rank = init_distributed()
+    seed = args.seed + rank
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
+    if is_main_process(rank):
+        os.makedirs(args.out_dir, exist_ok=True)
+        with open(join(args.out_dir, "args.json"), "w", encoding="utf-8") as f:
+            json.dump(vars(args), f, indent=2)
 
     if not args.val_lists:
         val_lists = [
@@ -239,7 +262,9 @@ def main():
         ]
         args.val_lists = ",".join(val_lists)
 
-    print("building frozen RVRT+LDMVFI pipeline...", flush=True)
+    if is_main_process(rank):
+        print(f"world_size={world_size}", flush=True)
+        print("building frozen RVRT+LDMVFI pipeline...", flush=True)
     pipeline = build_pipeline(args)
     corrector = EvenFrameResidualCorrector(
         hidden_channels=args.hidden_channels,
@@ -247,7 +272,6 @@ def main():
         max_residue=args.max_residue,
         use_flow_inputs=bool(args.use_flow_inputs),
     ).to(device)
-    optimizer = torch.optim.AdamW(corrector.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     train_set = VimeoOddEvenDataset(
         args.dataset_root_hr,
@@ -264,12 +288,28 @@ def main():
     val_items = []
     for val_set in val_sets:
         val_items.extend(val_set)
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+    train_sampler = DistributedSampler(train_set, shuffle=True) if distributed else None
+    train_loader = DataLoader(
+        train_set,
+        batch_size=args.batch_size,
+        shuffle=train_sampler is None,
+        sampler=train_sampler,
+        num_workers=args.num_workers,
+        pin_memory=True,
+        drop_last=True,
+    )
     val_loader = DataLoader(val_items, batch_size=1, shuffle=False, num_workers=args.num_workers)
-    print(f"datasets ready: train={len(train_set)} val={len(val_items)}", flush=True)
+    if distributed:
+        corrector = DDP(corrector, device_ids=[local_rank], output_device=local_rank)
+    optimizer = torch.optim.AdamW(corrector.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    if is_main_process(rank):
+        print(f"datasets ready: train={len(train_set)} val={len(val_items)}", flush=True)
 
     step = 0
+    epoch = 0
     while step < args.max_steps:
+        if train_sampler is not None:
+            train_sampler.set_epoch(epoch)
         for batch in train_loader:
             corrector.train()
             lr_odd = batch["lr_odd"].to(device)
@@ -292,15 +332,31 @@ def main():
             optimizer.step()
 
             step += 1
-            if step == 1 or step % 25 == 0:
+            if is_main_process(rank) and (step == 1 or step % 25 == 0):
                 print(f"step={step} loss={loss.item():.6f}", flush=True)
             if step % args.val_interval == 0 or step == args.max_steps:
-                val_loss, val_scores = validate(pipeline, corrector, val_loader, args, device)
-                print(f"validation step={step} loss={val_loss:.6f} even3={val_scores}", flush=True)
+                if is_main_process(rank):
+                    val_loss, val_scores = validate(
+                        pipeline,
+                        corrector.module if isinstance(corrector, DDP) else corrector,
+                        val_loader,
+                        args,
+                        device,
+                    )
+                    print(f"validation step={step} loss={val_loss:.6f} even3={val_scores}", flush=True)
+                if distributed:
+                    dist.barrier()
             if step % args.save_interval == 0 or step == args.max_steps:
-                save_checkpoint(corrector, optimizer, args, step, args.out_dir)
+                if is_main_process(rank):
+                    save_checkpoint(corrector, optimizer, args, step, args.out_dir)
+                if distributed:
+                    dist.barrier()
             if step >= args.max_steps:
                 break
+        epoch += 1
+    if distributed:
+        dist.barrier()
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":

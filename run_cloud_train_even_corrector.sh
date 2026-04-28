@@ -18,7 +18,8 @@ if [ -d "$PYTHON_DIR" ]; then
   export PATH="$PYTHON_DIR:$PATH"
 fi
 
-GPU_ID="${GPU_ID:-6}"
+GPU_IDS="${GPU_IDS:-6}"
+MASTER_PORT="${MASTER_PORT:-29581}"
 DATA_ROOT="${DATA_ROOT:-/data/Shenzhen/zzff/STVSR/data/vimeo_septuplet}"
 DATASET_ROOT_HR="${DATASET_ROOT_HR:-$DATA_ROOT/sequences}"
 DATASET_ROOT_LR="${DATASET_ROOT_LR:-$DATA_ROOT/sequences_LR}"
@@ -81,7 +82,16 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo "root=$ROOT_DIR"
 echo "python=$PYTHON_BIN"
-echo "gpu_id=$GPU_ID"
+IFS=',' read -r -a GPU_ARRAY <<< "$GPU_IDS"
+NUM_GPUS="${#GPU_ARRAY[@]}"
+if [[ "$NUM_GPUS" -lt 1 ]]; then
+  echo "GPU_IDS must contain at least one GPU"
+  exit 1
+fi
+
+echo "gpus=$GPU_IDS"
+echo "num_gpus=$NUM_GPUS"
+echo "master_port=$MASTER_PORT"
 echo "data_root=$DATA_ROOT"
 echo "train_split=$TRAIN_SPLIT"
 echo "train_list=$TRAIN_LIST"
@@ -108,10 +118,13 @@ echo "val_interval=$VAL_INTERVAL"
 echo "ddim_steps=$DDIM_STEPS"
 echo "metrics=$METRICS"
 
-export CUDA_VISIBLE_DEVICES="$GPU_ID"
+export CUDA_VISIBLE_DEVICES="$GPU_IDS"
 
 CMD=(
-  "$PYTHON_BIN" -u train_even_residual_corrector.py
+  "$PYTHON_BIN" -m torch.distributed.launch
+  --nproc_per_node="$NUM_GPUS"
+  --master_port="$MASTER_PORT"
+  train_even_residual_corrector.py
   --ldm_config "$LDM_CONFIG"
   --ldm_ckpt "$LDM_CKPT"
   --dataset_root_hr "$DATASET_ROOT_HR"
