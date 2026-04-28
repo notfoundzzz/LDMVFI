@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import random
+import time
 from os.path import join
 
 import numpy as np
@@ -307,6 +308,9 @@ def main():
 
     step = 0
     epoch = 0
+    start_time = time.time()
+    last_log_time = start_time
+    last_log_step = 0
     while step < args.max_steps:
         if train_sampler is not None:
             train_sampler.set_epoch(epoch)
@@ -333,9 +337,22 @@ def main():
 
             step += 1
             if is_main_process(rank) and (step == 1 or step % 25 == 0):
-                print(f"step={step} loss={loss.item():.6f}", flush=True)
+                now = time.time()
+                elapsed = now - start_time
+                avg_step_time = elapsed / max(step, 1)
+                recent_step_time = (now - last_log_time) / max(step - last_log_step, 1)
+                eta = avg_step_time * max(args.max_steps - step, 0)
+                print(
+                    f"step={step}/{args.max_steps} loss={loss.item():.6f} "
+                    f"elapsed={elapsed/60:.1f}m avg_step={avg_step_time:.2f}s "
+                    f"recent_step={recent_step_time:.2f}s eta={eta/60:.1f}m",
+                    flush=True,
+                )
+                last_log_time = now
+                last_log_step = step
             if step % args.val_interval == 0 or step == args.max_steps:
                 if is_main_process(rank):
+                    val_start = time.time()
                     val_loss, val_scores = validate(
                         pipeline,
                         corrector.module if isinstance(corrector, DDP) else corrector,
@@ -343,7 +360,12 @@ def main():
                         args,
                         device,
                     )
-                    print(f"validation step={step} loss={val_loss:.6f} even3={val_scores}", flush=True)
+                    val_elapsed = time.time() - val_start
+                    print(
+                        f"validation step={step} loss={val_loss:.6f} even3={val_scores} "
+                        f"val_time={val_elapsed/60:.1f}m",
+                        flush=True,
+                    )
                 if distributed:
                     dist.barrier()
             if step % args.save_interval == 0 or step == args.max_steps:
