@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import traceback
 import time
 from os.path import join
 
@@ -128,6 +129,10 @@ def cache_one_sample(args, pipeline, transform, split, key, lr_folder, device, s
 
 
 def main():
+    run_cache()
+
+
+def run_cache():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ldm_config", default="/data/Shenzhen/zhahongli/LDMVFI/configs/ldm/ldmvfi-vqflow-f32-c256-concat_max.yaml")
     parser.add_argument("--ldm_ckpt", default="/data/Shenzhen/zhahongli/models/ldmvfi/ldmvfi-vqflow-f32-c256-concat_max.ckpt")
@@ -172,54 +177,58 @@ def main():
         [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
     )
 
-    if is_main_process(rank):
+    try:
         os.makedirs(args.cache_root, exist_ok=True)
-        with open(join(args.cache_root, "args.json"), "w", encoding="utf-8") as f:
-            json.dump(vars(args), f, indent=2)
-        print(f"world_size={world_size}", flush=True)
-        print(f"cache_root={args.cache_root}", flush=True)
-        print("building frozen RVRT+LDMVFI pipeline...", flush=True)
-    pipeline = build_pipeline(args)
+        if is_main_process(rank):
+            with open(join(args.cache_root, "args.json"), "w", encoding="utf-8") as f:
+                json.dump(vars(args), f, indent=2)
+            print(f"world_size={world_size}", flush=True)
+            print(f"cache_root={args.cache_root}", flush=True)
+        print(f"rank={rank} local_rank={local_rank} device={device} building frozen RVRT+LDMVFI pipeline...", flush=True)
+        pipeline = build_pipeline(args)
+        print(f"rank={rank} pipeline ready", flush=True)
 
-    split_specs = build_split_specs(args)
-    rank_manifest = join(args.cache_root, f"manifest_rank{rank:03d}.jsonl")
-    os.makedirs(args.cache_root, exist_ok=True)
-    with open(rank_manifest, "w", encoding="utf-8") as manifest:
-        for spec in split_specs:
-            split = spec["split"]
-            lr_root, folders = collect_split_items(args, split, spec["list_file"], spec["max_samples"])
-            split_dir = join(args.cache_root, split)
-            os.makedirs(split_dir, exist_ok=True)
-            assigned = [(idx, item) for idx, item in enumerate(folders) if idx % world_size == rank]
-            if is_main_process(rank):
+        split_specs = build_split_specs(args)
+        rank_manifest = join(args.cache_root, f"manifest_rank{rank:03d}.jsonl")
+        with open(rank_manifest, "w", encoding="utf-8") as manifest:
+            for spec in split_specs:
+                split = spec["split"]
+                lr_root, folders = collect_split_items(args, split, spec["list_file"], spec["max_samples"])
+                split_dir = join(args.cache_root, split)
+                os.makedirs(split_dir, exist_ok=True)
+                assigned = [(idx, item) for idx, item in enumerate(folders) if idx % world_size == rank]
                 print(
-                    f"split={split} lr_root={lr_root} total={len(folders)} assigned_rank0={len(assigned)}",
+                    f"rank={rank} split={split} lr_root={lr_root} total={len(folders)} assigned={len(assigned)}",
                     flush=True,
                 )
-            start = time.time()
-            done = 0
-            skipped = 0
-            for local_pos, (sample_index, (key, lr_folder)) in enumerate(assigned, start=1):
-                out_path = join(split_dir, f"{safe_key(key)}.pt")
-                if args.skip_existing and os.path.exists(out_path):
-                    skipped += 1
-                else:
-                    payload = cache_one_sample(args, pipeline, transform, split, key, lr_folder, device, sample_index)
-                    save_cache_item(out_path, payload)
-                    done += 1
-                record = {"split": split, "key": key, "path": out_path, "rank": rank}
-                manifest.write(json.dumps(record, ensure_ascii=False) + "\n")
-                manifest.flush()
-                if local_pos == 1 or local_pos % args.log_interval == 0 or local_pos == len(assigned):
-                    elapsed = time.time() - start
-                    avg = elapsed / max(local_pos, 1)
-                    eta = avg * max(len(assigned) - local_pos, 0)
-                    print(
-                        f"rank={rank} split={split} {local_pos}/{len(assigned)} "
-                        f"done={done} skipped={skipped} elapsed={elapsed/60:.1f}m "
-                        f"avg={avg:.2f}s eta={eta/60:.1f}m",
-                        flush=True,
-                    )
+                start = time.time()
+                done = 0
+                skipped = 0
+                for local_pos, (sample_index, (key, lr_folder)) in enumerate(assigned, start=1):
+                    out_path = join(split_dir, f"{safe_key(key)}.pt")
+                    if args.skip_existing and os.path.exists(out_path):
+                        skipped += 1
+                    else:
+                        payload = cache_one_sample(args, pipeline, transform, split, key, lr_folder, device, sample_index)
+                        save_cache_item(out_path, payload)
+                        done += 1
+                    record = {"split": split, "key": key, "path": out_path, "rank": rank}
+                    manifest.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    manifest.flush()
+                    if local_pos == 1 or local_pos % args.log_interval == 0 or local_pos == len(assigned):
+                        elapsed = time.time() - start
+                        avg = elapsed / max(local_pos, 1)
+                        eta = avg * max(len(assigned) - local_pos, 0)
+                        print(
+                            f"rank={rank} split={split} {local_pos}/{len(assigned)} "
+                            f"done={done} skipped={skipped} elapsed={elapsed/60:.1f}m "
+                            f"avg={avg:.2f}s eta={eta/60:.1f}m",
+                            flush=True,
+                        )
+    except Exception:
+        print(f"rank={rank} cache failed with exception:", flush=True)
+        traceback.print_exc()
+        raise
 
     if distributed:
         dist.barrier()

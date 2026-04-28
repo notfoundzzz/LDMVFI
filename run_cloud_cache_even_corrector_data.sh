@@ -73,6 +73,7 @@ mkdir -p "$LOG_ROOT" "$CACHE_ROOT"
 STAMP="$(date +%Y%m%d_%H%M%S)"
 LOG_FILE="$LOG_ROOT/cache_even_corrector_${STAMP}.log"
 ln -sfn "$(basename "$LOG_FILE")" "$LOG_ROOT/latest_cache_even_corrector.log"
+export PYTHONUNBUFFERED=1
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 IFS=',' read -r -a GPU_ARRAY <<< "$GPU_IDS"
@@ -84,6 +85,8 @@ fi
 
 echo "root=$ROOT_DIR"
 echo "python=$PYTHON_BIN"
+echo "log_file=$LOG_FILE"
+echo "latest_log=$LOG_ROOT/latest_cache_even_corrector.log"
 echo "gpus=$GPU_IDS"
 echo "num_gpus=$NUM_GPUS"
 echo "master_port=$MASTER_PORT"
@@ -101,7 +104,7 @@ echo "ddim_steps=$DDIM_STEPS"
 export CUDA_VISIBLE_DEVICES="$GPU_IDS"
 
 CMD=(
-  "$PYTHON_BIN" -m torch.distributed.launch
+  "$PYTHON_BIN" -u -m torch.distributed.launch
   --nproc_per_node="$NUM_GPUS"
   --master_port="$MASTER_PORT"
   cache_even_corrector_data.py
