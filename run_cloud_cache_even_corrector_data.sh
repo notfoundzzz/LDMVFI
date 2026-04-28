@@ -89,7 +89,7 @@ echo "log_file=$LOG_FILE"
 echo "latest_log=$LOG_ROOT/latest_cache_even_corrector.log"
 echo "gpus=$GPU_IDS"
 echo "num_gpus=$NUM_GPUS"
-echo "master_port=$MASTER_PORT"
+echo "master_port=$MASTER_PORT (unused; cache uses independent shards, not NCCL)"
 echo "data_root=$DATA_ROOT"
 echo "cache_root=$CACHE_ROOT"
 echo "cache_train=$CACHE_TRAIN"
@@ -101,12 +101,7 @@ echo "rvrt_flow_mode=$RVRT_FLOW_MODE"
 echo "use_flow_inputs=$USE_FLOW_INPUTS"
 echo "ddim_steps=$DDIM_STEPS"
 
-export CUDA_VISIBLE_DEVICES="$GPU_IDS"
-
-CMD=(
-  "$PYTHON_BIN" -u -m torch.distributed.launch
-  --nproc_per_node="$NUM_GPUS"
-  --master_port="$MASTER_PORT"
+BASE_ARGS=(
   cache_even_corrector_data.py
   --ldm_config "$LDM_CONFIG"
   --ldm_ckpt "$LDM_CKPT"
@@ -141,20 +136,55 @@ CMD=(
 )
 
 if [[ -n "$RVRT_RAFT_CKPT" ]]; then
-  CMD+=(--rvrt_raft_ckpt "$RVRT_RAFT_CKPT")
+  BASE_ARGS+=(--rvrt_raft_ckpt "$RVRT_RAFT_CKPT")
 fi
 if [[ -n "$EVEN_FLOW_RAFT_CKPT" ]]; then
-  CMD+=(--flow_raft_ckpt "$EVEN_FLOW_RAFT_CKPT")
+  BASE_ARGS+=(--flow_raft_ckpt "$EVEN_FLOW_RAFT_CKPT")
 fi
 if [[ "$USE_RAW_WEIGHTS" == "1" || "$USE_RAW_WEIGHTS" == "true" ]]; then
-  CMD+=(--use_raw_weights)
+  BASE_ARGS+=(--use_raw_weights)
 fi
 if [[ "$ALLOW_INCOMPLETE_CKPT" == "1" || "$ALLOW_INCOMPLETE_CKPT" == "true" ]]; then
-  CMD+=(--allow_incomplete_ckpt)
+  BASE_ARGS+=(--allow_incomplete_ckpt)
 fi
 
-echo "==== command ===="
-printf '%q ' "${CMD[@]}"
+echo "==== base args ===="
+printf '%q ' "$PYTHON_BIN" -u "${BASE_ARGS[@]}"
 echo
+echo "==== shard launch ===="
+PIDS=()
+for SHARD_ID in "${!GPU_ARRAY[@]}"; do
+  GPU_ID="$(echo "${GPU_ARRAY[$SHARD_ID]}" | xargs)"
+  SHARD_LOG="$LOG_ROOT/cache_even_corrector_${STAMP}_shard${SHARD_ID}.log"
+  echo "launch shard=$SHARD_ID/$NUM_GPUS gpu=$GPU_ID shard_log=$SHARD_LOG"
+  (
+    export CUDA_VISIBLE_DEVICES="$GPU_ID"
+    "$PYTHON_BIN" -u "${BASE_ARGS[@]}" --shard_id "$SHARD_ID" --num_shards "$NUM_GPUS"
+  ) > >(tee -a "$SHARD_LOG") 2>&1 &
+  PIDS+=("$!")
+done
+
 echo "==== start caching ===="
-"${CMD[@]}"
+STATUS=0
+for PID in "${PIDS[@]}"; do
+  if ! wait "$PID"; then
+    STATUS=1
+  fi
+done
+if [[ "$STATUS" -ne 0 ]]; then
+  echo "one or more cache shards failed"
+  exit "$STATUS"
+fi
+
+MANIFEST="$CACHE_ROOT/manifest.jsonl"
+: > "$MANIFEST"
+for SHARD_ID in "${!GPU_ARRAY[@]}"; do
+  SHARD_MANIFEST="$CACHE_ROOT/manifest_shard$(printf '%03d' "$SHARD_ID").jsonl"
+  if [[ -f "$SHARD_MANIFEST" ]]; then
+    cat "$SHARD_MANIFEST" >> "$MANIFEST"
+  else
+    echo "missing shard manifest: $SHARD_MANIFEST"
+    exit 1
+  fi
+done
+echo "wrote manifest=$MANIFEST"

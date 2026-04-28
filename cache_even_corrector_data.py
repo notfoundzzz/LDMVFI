@@ -6,15 +6,12 @@ import time
 from os.path import join
 
 import torch
-import torch.distributed as dist
 from torchvision import transforms
 
 from evaluate_rvrt_ldmvfi import collect_triplet_folders
 from train_even_residual_corrector import (
     build_pipeline,
     flatten_even,
-    init_distributed,
-    is_main_process,
     load_sequence,
     make_even_batch,
     make_flow_inputs,
@@ -168,37 +165,45 @@ def run_cache():
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--use_raw_weights", action="store_true")
     parser.add_argument("--allow_incomplete_ckpt", action="store_true")
-    parser.add_argument("--local_rank", type=int, default=0)
+    parser.add_argument("--shard_id", type=int, default=0)
+    parser.add_argument("--num_shards", type=int, default=1)
     args = parser.parse_args()
 
-    distributed, rank, world_size, local_rank = init_distributed()
-    device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
+    if args.num_shards < 1:
+        raise ValueError("--num_shards must be >= 1")
+    if args.shard_id < 0 or args.shard_id >= args.num_shards:
+        raise ValueError(f"--shard_id must be in [0, {args.num_shards}), got {args.shard_id}")
+
+    shard_id = args.shard_id
+    num_shards = args.num_shards
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     transform = transforms.Compose(
         [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
     )
 
     try:
         os.makedirs(args.cache_root, exist_ok=True)
-        if is_main_process(rank):
+        if shard_id == 0:
             with open(join(args.cache_root, "args.json"), "w", encoding="utf-8") as f:
                 json.dump(vars(args), f, indent=2)
-            print(f"world_size={world_size}", flush=True)
+            print(f"num_shards={num_shards}", flush=True)
             print(f"cache_root={args.cache_root}", flush=True)
-        print(f"rank={rank} local_rank={local_rank} device={device} building frozen RVRT+LDMVFI pipeline...", flush=True)
+        print(f"shard={shard_id}/{num_shards} device={device} building frozen RVRT+LDMVFI pipeline...", flush=True)
         pipeline = build_pipeline(args)
-        print(f"rank={rank} pipeline ready", flush=True)
+        print(f"shard={shard_id}/{num_shards} pipeline ready", flush=True)
 
         split_specs = build_split_specs(args)
-        rank_manifest = join(args.cache_root, f"manifest_rank{rank:03d}.jsonl")
-        with open(rank_manifest, "w", encoding="utf-8") as manifest:
+        shard_manifest = join(args.cache_root, f"manifest_shard{shard_id:03d}.jsonl")
+        with open(shard_manifest, "w", encoding="utf-8") as manifest:
             for spec in split_specs:
                 split = spec["split"]
                 lr_root, folders = collect_split_items(args, split, spec["list_file"], spec["max_samples"])
                 split_dir = join(args.cache_root, split)
                 os.makedirs(split_dir, exist_ok=True)
-                assigned = [(idx, item) for idx, item in enumerate(folders) if idx % world_size == rank]
+                assigned = [(idx, item) for idx, item in enumerate(folders) if idx % num_shards == shard_id]
                 print(
-                    f"rank={rank} split={split} lr_root={lr_root} total={len(folders)} assigned={len(assigned)}",
+                    f"shard={shard_id}/{num_shards} split={split} lr_root={lr_root} "
+                    f"total={len(folders)} assigned={len(assigned)}",
                     flush=True,
                 )
                 start = time.time()
@@ -212,7 +217,7 @@ def run_cache():
                         payload = cache_one_sample(args, pipeline, transform, split, key, lr_folder, device, sample_index)
                         save_cache_item(out_path, payload)
                         done += 1
-                    record = {"split": split, "key": key, "path": out_path, "rank": rank}
+                    record = {"split": split, "key": key, "path": out_path, "shard_id": shard_id}
                     manifest.write(json.dumps(record, ensure_ascii=False) + "\n")
                     manifest.flush()
                     if local_pos == 1 or local_pos % args.log_interval == 0 or local_pos == len(assigned):
@@ -220,32 +225,15 @@ def run_cache():
                         avg = elapsed / max(local_pos, 1)
                         eta = avg * max(len(assigned) - local_pos, 0)
                         print(
-                            f"rank={rank} split={split} {local_pos}/{len(assigned)} "
+                            f"shard={shard_id}/{num_shards} split={split} {local_pos}/{len(assigned)} "
                             f"done={done} skipped={skipped} elapsed={elapsed/60:.1f}m "
                             f"avg={avg:.2f}s eta={eta/60:.1f}m",
                             flush=True,
                         )
     except Exception:
-        print(f"rank={rank} cache failed with exception:", flush=True)
+        print(f"shard={shard_id}/{num_shards} cache failed with exception:", flush=True)
         traceback.print_exc()
         raise
-
-    if distributed:
-        dist.barrier()
-    if is_main_process(rank):
-        manifest_path = join(args.cache_root, "manifest.jsonl")
-        with open(manifest_path, "w", encoding="utf-8") as out_manifest:
-            for manifest_rank in range(world_size):
-                path = join(args.cache_root, f"manifest_rank{manifest_rank:03d}.jsonl")
-                if not os.path.exists(path):
-                    continue
-                with open(path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        out_manifest.write(line)
-        print(f"wrote manifest={manifest_path}", flush=True)
-    if distributed:
-        dist.barrier()
-        dist.destroy_process_group()
 
 
 if __name__ == "__main__":
