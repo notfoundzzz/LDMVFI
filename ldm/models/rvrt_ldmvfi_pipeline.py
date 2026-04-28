@@ -1,6 +1,7 @@
 from contextlib import nullcontext
 
 import torch
+import torch.nn.functional as F
 
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.models.flow_guidance import (
@@ -177,6 +178,15 @@ class RVRTLDMVFIPipeline:
             return torch.cat([seq, seq.flip(1)], dim=1)
         return seq
 
+    def _pad_for_ldmvfi_conditioning(self, *frames, min_size=256):
+        height, width = frames[0].shape[-2:]
+        pad_h = max(min_size - height, 0)
+        pad_w = max(min_size - width, 0)
+        if pad_h == 0 and pad_w == 0:
+            return frames, (height, width)
+        padded = tuple(F.pad(frame, (0, pad_w, 0, pad_h), mode="replicate") for frame in frames)
+        return padded, (height, width)
+
     @torch.no_grad()
     def super_resolve_sequence(self, lr_sequence):
         original_frames = lr_sequence.shape[1]
@@ -236,6 +246,22 @@ class RVRTLDMVFIPipeline:
             prev_lr = prev_frame
         if next_lr is None:
             next_lr = next_frame
+
+        (
+            prev_frame,
+            next_frame,
+            prev_lr,
+            next_lr,
+            raw_prev_sr,
+            raw_next_sr,
+        ), original_size = self._pad_for_ldmvfi_conditioning(
+            prev_frame,
+            next_frame,
+            prev_lr,
+            next_lr,
+            raw_prev_sr,
+            raw_next_sr,
+        )
 
         scope = self.model.ema_scope() if self.use_ema and hasattr(self.model, "ema_scope") else nullcontext()
         with scope:
@@ -302,6 +328,7 @@ class RVRTLDMVFIPipeline:
             if isinstance(latent, tuple):
                 latent = latent[0]
             out = self.model.decode_first_stage(latent, xc, phi_prev_list, phi_next_list)
+        out = out[:, :, : original_size[0], : original_size[1]]
         return torch.clamp(out, min=-1.0, max=1.0)
 
     @torch.no_grad()
