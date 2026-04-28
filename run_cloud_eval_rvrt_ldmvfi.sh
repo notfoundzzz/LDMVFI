@@ -30,6 +30,7 @@ SPLITS="${SPLITS:-$SPLIT}"
 LIST_FILE="${LIST_FILE:-}"
 SCALE="${SCALE:-4}"
 SR_MODE="${SR_MODE:-bicubic}"
+EVAL_PIPELINE="${EVAL_PIPELINE:-sr_then_vfi}"
 RVRT_ROOT="${RVRT_ROOT:-/data/Shenzhen/zhahongli/RVRT}"
 RVRT_TASK="${RVRT_TASK:-002_RVRT_videosr_bi_Vimeo_14frames}"
 RVRT_CKPT="${RVRT_CKPT:-$RVRT_ROOT/model_zoo/rvrt/${RVRT_TASK}.pth}"
@@ -85,6 +86,7 @@ echo "list_file=$LIST_FILE"
 echo "out_dir=$OUT_DIR"
 echo "scale=$SCALE"
 echo "sr_mode=$SR_MODE"
+echo "eval_pipeline=$EVAL_PIPELINE"
 echo "rvrt_root=$RVRT_ROOT"
 echo "rvrt_task=$RVRT_TASK"
 echo "rvrt_ckpt=$RVRT_CKPT"
@@ -153,6 +155,7 @@ for SPLIT_NAME in "${SPLIT_ARRAY[@]}"; do
     --out_dir "$SPLIT_OUT_DIR" \
     --scale "$SCALE" \
     --sr_mode "$SR_MODE" \
+    --eval_pipeline "$EVAL_PIPELINE" \
     --rvrt_root "$RVRT_ROOT" \
     --rvrt_task "$RVRT_TASK" \
     --rvrt_ckpt "$RVRT_CKPT" \
@@ -256,18 +259,39 @@ for path in summary_paths:
     with open(path, "r", encoding="utf-8") as f:
         summaries.append(json.load(f))
 
-metric_names = list(summaries[0]["average"].keys())
 total_samples = sum(item["num_samples"] for item in summaries)
-overall = {}
-for metric in metric_names:
-    overall[metric] = round(
-        sum(item["average"][metric] * item["num_samples"] for item in summaries) / total_samples,
-        3,
-    )
 
 print("==== split summaries ====")
-for item in summaries:
-    print(item["split"], item["average"], f"samples={item['num_samples']}")
+if "averages" in summaries[0]:
+    groups = list(summaries[0]["averages"].keys())
+    for item in summaries:
+        print(item["split"], item["averages"], f"samples={item['num_samples']}")
+
+    overall = {}
+    for group in groups:
+        overall[group] = {}
+        metric_names = list(summaries[0]["averages"][group].keys())
+        for metric in metric_names:
+            weighted_sum = 0.0
+            weight_sum = 0
+            for item in summaries:
+                value = item["averages"][group][metric]
+                if value is None:
+                    continue
+                weight = item.get("metric_frame_counts", {}).get(group, {}).get(metric, item["num_samples"])
+                weighted_sum += value * weight
+                weight_sum += weight
+            overall[group][metric] = round(weighted_sum / weight_sum, 3) if weight_sum else None
+else:
+    metric_names = list(summaries[0]["average"].keys())
+    overall = {}
+    for item in summaries:
+        print(item["split"], item["average"], f"samples={item['num_samples']}")
+    for metric in metric_names:
+        overall[metric] = round(
+            sum(item["average"][metric] * item["num_samples"] for item in summaries) / total_samples,
+            3,
+        )
 print("==== overall average ====")
 print(overall, f"samples={total_samples}")
 PY

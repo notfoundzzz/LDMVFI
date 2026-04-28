@@ -173,19 +173,29 @@ class RVRTLDMVFIPipeline:
         return torch.random.fork_rng(devices=devices)
 
     def _prepare_rvrt_sequence(self, seq):
-        if getattr(self.sr_frontend, "flow_mode", None) is not None and seq.shape[1] == 7:
+        if getattr(self.sr_frontend, "flow_mode", None) is not None and seq.shape[1] in (4, 6, 7):
             return torch.cat([seq, seq.flip(1)], dim=1)
         return seq
+
+    @torch.no_grad()
+    def super_resolve_sequence(self, lr_sequence):
+        original_frames = lr_sequence.shape[1]
+        seq = ((lr_sequence.to(self.device) + 1.0) / 2.0).clamp(0.0, 1.0)
+        seq = self._prepare_rvrt_sequence(seq)
+        out = self.sr_frontend(seq)
+        out = out[:, :original_frames]
+        return torch.clamp(out * 2.0 - 1.0, min=-1.0, max=1.0)
 
     @torch.no_grad()
     def super_resolve_neighbors(self, prev_lr, next_lr, lr_sequence=None, prev_index=None, next_index=None):
         if lr_sequence is not None:
             seq = lr_sequence.to(self.device)
+            input_frames = seq.shape[1]
             seq = self._prepare_rvrt_sequence(seq)
             if prev_index is None:
-                prev_index = int(getattr(self.model, "rvrt_prev_index", 2))
+                prev_index = 2 if input_frames in (6, 7) else int(getattr(self.model, "rvrt_prev_index", 0))
             if next_index is None:
-                next_index = int(getattr(self.model, "rvrt_next_index", 4))
+                next_index = 3 if input_frames == 6 else int(getattr(self.model, "rvrt_next_index", 4))
         else:
             seq = torch.stack([prev_lr, next_lr], dim=1).to(self.device)
             prev_index, next_index = 0, 1
@@ -203,33 +213,33 @@ class RVRTLDMVFIPipeline:
         return raw_prev_sr, raw_next_sr, prev_sr, next_sr
 
     @torch.no_grad()
-    def interpolate(
+    def interpolate_condition_frames(
         self,
-        prev_lr,
-        next_lr,
-        lr_sequence=None,
+        prev_frame,
+        next_frame,
         use_ddim=True,
         ddim_steps=200,
         ddim_eta=0.0,
         seed=None,
+        prev_lr=None,
+        next_lr=None,
+        raw_prev_sr=None,
+        raw_next_sr=None,
     ):
-        prev_lr = prev_lr.to(self.device)
-        next_lr = next_lr.to(self.device)
-
-        prev_01 = (prev_lr + 1.0) / 2.0
-        next_01 = (next_lr + 1.0) / 2.0
-        lr_sequence_01 = None
-        if lr_sequence is not None:
-            lr_sequence_01 = ((lr_sequence.to(self.device) + 1.0) / 2.0).clamp(0.0, 1.0)
-        raw_prev_sr, raw_next_sr, prev_sr, next_sr = self.super_resolve_neighbors(
-            prev_01,
-            next_01,
-            lr_sequence=lr_sequence_01,
-        )
+        prev_frame = prev_frame.to(self.device)
+        next_frame = next_frame.to(self.device)
+        if raw_prev_sr is None:
+            raw_prev_sr = prev_frame
+        if raw_next_sr is None:
+            raw_next_sr = next_frame
+        if prev_lr is None:
+            prev_lr = prev_frame
+        if next_lr is None:
+            next_lr = next_frame
 
         scope = self.model.ema_scope() if self.use_ema and hasattr(self.model, "ema_scope") else nullcontext()
         with scope:
-            xc = {"prev_frame": prev_sr, "next_frame": next_sr}
+            xc = {"prev_frame": prev_frame, "next_frame": next_frame}
             if getattr(self.model, "use_flow_guidance", False):
                 flow_mode = getattr(self.model, "flow_condition_mode", "fused")
                 if flow_mode == "aligned_input":
@@ -292,4 +302,42 @@ class RVRTLDMVFIPipeline:
             if isinstance(latent, tuple):
                 latent = latent[0]
             out = self.model.decode_first_stage(latent, xc, phi_prev_list, phi_next_list)
-        return torch.clamp(out, min=-1.0, max=1.0), prev_sr, next_sr
+        return torch.clamp(out, min=-1.0, max=1.0)
+
+    @torch.no_grad()
+    def interpolate(
+        self,
+        prev_lr,
+        next_lr,
+        lr_sequence=None,
+        use_ddim=True,
+        ddim_steps=200,
+        ddim_eta=0.0,
+        seed=None,
+    ):
+        prev_lr = prev_lr.to(self.device)
+        next_lr = next_lr.to(self.device)
+
+        prev_01 = (prev_lr + 1.0) / 2.0
+        next_01 = (next_lr + 1.0) / 2.0
+        lr_sequence_01 = None
+        if lr_sequence is not None:
+            lr_sequence_01 = ((lr_sequence.to(self.device) + 1.0) / 2.0).clamp(0.0, 1.0)
+        raw_prev_sr, raw_next_sr, prev_sr, next_sr = self.super_resolve_neighbors(
+            prev_01,
+            next_01,
+            lr_sequence=lr_sequence_01,
+        )
+        out = self.interpolate_condition_frames(
+            prev_sr,
+            next_sr,
+            use_ddim=use_ddim,
+            ddim_steps=ddim_steps,
+            ddim_eta=ddim_eta,
+            seed=seed,
+            prev_lr=prev_lr,
+            next_lr=next_lr,
+            raw_prev_sr=raw_prev_sr,
+            raw_next_sr=raw_next_sr,
+        )
+        return out, prev_sr, next_sr

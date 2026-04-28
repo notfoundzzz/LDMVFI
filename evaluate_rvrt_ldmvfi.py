@@ -109,13 +109,17 @@ def load_triplet(folder, transform):
     raise FileNotFoundError(f"No supported triplet naming found in {folder}")
 
 
-def load_lr_sequence(folder, transform):
-    names = [f"im{i}.png" for i in range(1, 8)]
+def load_sequence(folder, frame_ids, transform):
+    names = [f"im{i}.png" for i in frame_ids]
     paths = [join(folder, name) for name in names]
     if not all(os.path.exists(path) for path in paths):
         return None
     frames = [transform(Image.open(path)) for path in paths]
     return torch.stack(frames, dim=0).unsqueeze(0)
+
+
+def load_lr_sequence(folder, transform):
+    return load_sequence(folder, list(range(1, 8)), transform)
 
 
 def collect_triplet_folders(dataset_root, list_file=None, max_samples=0):
@@ -165,8 +169,62 @@ def align_for_metrics(*tensors):
     return [center_crop_to(t, min_h, min_w) for t in tensors]
 
 
+def compute_metrics(metrics, gt, out, prev=None, nxt=None, device=None):
+    if device is None:
+        device = out.device
+    if prev is None:
+        prev = out
+    if nxt is None:
+        nxt = out
+    gt_eval, out_eval, prev_eval, next_eval = align_for_metrics(
+        gt.to(device),
+        out.to(device),
+        prev.to(device),
+        nxt.to(device),
+    )
+    scores = {}
+    for metric in metrics:
+        score = getattr(utility, f"calc_{metric.lower()}")(gt_eval, out_eval, [prev_eval, next_eval])
+        scores[metric] = float(score.mean().item())
+    return scores
+
+
+def init_results(groups, metrics):
+    return {group: {metric: [] for metric in metrics} for group in groups}
+
+
+def extend_results(results, group, frame_scores, metrics):
+    for scores in frame_scores:
+        for metric in metrics:
+            results[group][metric].append(scores[metric])
+
+
+def average_results(results):
+    return {
+        group: {
+            metric: round(float(np.mean(values)), 3) if values else None
+            for metric, values in metric_values.items()
+        }
+        for group, metric_values in results.items()
+    }
+
+
+def result_counts(results):
+    return {
+        group: {metric: len(values) for metric, values in metric_values.items()}
+        for group, metric_values in results.items()
+    }
+
+
+def mean_scores(frame_scores, metrics):
+    return {
+        metric: round(float(np.mean([scores[metric] for scores in frame_scores])), 3)
+        for metric in metrics
+    }
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Evaluate RVRT + LDMVFI pipeline on triplet folders")
+    parser = argparse.ArgumentParser(description="Evaluate RVRT + LDMVFI on Vimeo sequences")
     parser.add_argument("--ldm_config", required=True)
     parser.add_argument("--ldm_ckpt", required=True)
     parser.add_argument("--dataset_root_hr", required=True)
@@ -176,6 +234,11 @@ def main():
     parser.add_argument("--out_dir", required=True)
     parser.add_argument("--scale", type=int, default=4)
     parser.add_argument("--sr_mode", choices=["bicubic", "rvrt"], default="bicubic")
+    parser.add_argument(
+        "--eval_pipeline",
+        choices=["triplet", "sr_then_vfi", "vfi_then_sr"],
+        default="sr_then_vfi",
+    )
     parser.add_argument("--rvrt_root", default=None)
     parser.add_argument("--rvrt_task", default="002_RVRT_videosr_bi_Vimeo_14frames")
     parser.add_argument("--rvrt_ckpt", default=None)
@@ -277,7 +340,8 @@ def main():
         use_ema=args.use_ema,
         strict_checkpoint=args.strict_checkpoint,
     )
-    results = {metric: [] for metric in args.metrics}
+    result_groups = ["target"] if args.eval_pipeline == "triplet" else ["all7", "odd4", "even3"]
+    results = init_results(result_groups, args.metrics)
     dataset_root_hr = args.dataset_root_hr
     dataset_root_lr = args.dataset_root_lr
     if args.split:
@@ -286,54 +350,152 @@ def main():
     triplet_folders = collect_triplet_folders(dataset_root_lr, list_file=args.list_file, max_samples=args.max_samples)
     if not triplet_folders:
         raise FileNotFoundError(f"No supported triplet folders found under {dataset_root_lr}")
-    print(f"Found {len(triplet_folders)} triplets")
+    print(f"Found {len(triplet_folders)} sequences")
 
     for idx, (name, folder) in enumerate(triplet_folders, start=1):
         print(f"[{idx}/{len(triplet_folders)}] {name}")
-        prev_lr, _, next_lr = load_triplet(folder, transform)
-        lr_sequence = load_lr_sequence(folder, transform)
         hr_folder = join(dataset_root_hr, *name.split("/"))
-        _, gt, _ = load_triplet(hr_folder, transform)
-        with torch.no_grad():
-            out, prev_sr, next_sr = pipeline.interpolate(
-                prev_lr,
-                next_lr,
-                lr_sequence=lr_sequence,
-                use_ddim=args.use_ddim,
-                ddim_steps=args.ddim_steps,
-                ddim_eta=args.ddim_eta,
-                seed=args.seed,
-            )
 
         should_save = args.save_images and (args.save_max_samples <= 0 or idx <= args.save_max_samples)
+        item_dir = join(args.out_dir, name)
         if should_save:
-            item_dir = join(args.out_dir, name)
             os.makedirs(item_dir, exist_ok=True)
-            save_image(out, join(item_dir, "output.png"), value_range=(-1, 1), normalize=True)
-            if args.save_sr_images:
-                save_image(prev_sr, join(item_dir, "prev_sr.png"), value_range=(-1, 1), normalize=True)
-                save_image(next_sr, join(item_dir, "next_sr.png"), value_range=(-1, 1), normalize=True)
 
-        gt_eval, out_eval, prev_eval, next_eval = align_for_metrics(
-            gt.to(pipeline.device),
-            out,
-            prev_sr,
-            next_sr,
-        )
-        metrics_msg = {}
-        for metric in args.metrics:
-            score = getattr(utility, f"calc_{metric.lower()}")(gt_eval, out_eval, [prev_eval, next_eval])[0].item()
-            results[metric].append(score)
-            metrics_msg[metric] = round(score, 3)
-        print(name, metrics_msg)
+        if args.eval_pipeline == "triplet":
+            prev_lr, _, next_lr = load_triplet(folder, transform)
+            lr_sequence = load_lr_sequence(folder, transform)
+            _, gt, _ = load_triplet(hr_folder, transform)
+            with torch.no_grad():
+                out, prev_sr, next_sr = pipeline.interpolate(
+                    prev_lr,
+                    next_lr,
+                    lr_sequence=lr_sequence,
+                    use_ddim=args.use_ddim,
+                    ddim_steps=args.ddim_steps,
+                    ddim_eta=args.ddim_eta,
+                    seed=args.seed,
+                )
+            frame_scores = [
+                compute_metrics(args.metrics, gt, out, prev_sr, next_sr, device=pipeline.device)
+            ]
+            extend_results(results, "target", frame_scores, args.metrics)
+            print(name, {"target": mean_scores(frame_scores, args.metrics)})
+            if should_save:
+                save_image(out, join(item_dir, "output.png"), value_range=(-1, 1), normalize=True)
+                if args.save_sr_images:
+                    save_image(prev_sr, join(item_dir, "prev_sr.png"), value_range=(-1, 1), normalize=True)
+                    save_image(next_sr, join(item_dir, "next_sr.png"), value_range=(-1, 1), normalize=True)
+        else:
+            lr_odd = load_sequence(folder, [1, 3, 5, 7], transform)
+            gt_full = load_sequence(hr_folder, list(range(1, 8)), transform)
+            if lr_odd is None or gt_full is None:
+                raise FileNotFoundError(f"Missing Vimeo frames in {folder} or {hr_folder}")
 
-    average = {metric: round(float(np.mean(scores)), 3) for metric, scores in results.items()}
-    print("Average", average)
+            with torch.no_grad():
+                if args.eval_pipeline == "sr_then_vfi":
+                    sr_odd = pipeline.super_resolve_sequence(lr_odd)
+                    even_preds = []
+                    for pair_idx in range(3):
+                        pred = pipeline.interpolate_condition_frames(
+                            sr_odd[:, pair_idx],
+                            sr_odd[:, pair_idx + 1],
+                            use_ddim=args.use_ddim,
+                            ddim_steps=args.ddim_steps,
+                            ddim_eta=args.ddim_eta,
+                            seed=args.seed + pair_idx,
+                        )
+                        even_preds.append(pred)
+                    full_preds = [
+                        sr_odd[:, 0],
+                        even_preds[0],
+                        sr_odd[:, 1],
+                        even_preds[1],
+                        sr_odd[:, 2],
+                        even_preds[2],
+                        sr_odd[:, 3],
+                    ]
+                else:
+                    pred_lr = []
+                    for pair_idx in range(3):
+                        pred = pipeline.interpolate_condition_frames(
+                            lr_odd[:, pair_idx].to(pipeline.device),
+                            lr_odd[:, pair_idx + 1].to(pipeline.device),
+                            use_ddim=args.use_ddim,
+                            ddim_steps=args.ddim_steps,
+                            ddim_eta=args.ddim_eta,
+                            seed=args.seed + pair_idx,
+                        )
+                        pred_lr.append(pred.cpu())
+                    lr_full = torch.stack(
+                        [
+                            lr_odd[:, 0],
+                            pred_lr[0],
+                            lr_odd[:, 1],
+                            pred_lr[1],
+                            lr_odd[:, 2],
+                            pred_lr[2],
+                            lr_odd[:, 3],
+                        ],
+                        dim=1,
+                    )
+                    sr_full = pipeline.super_resolve_sequence(lr_full)
+                    full_preds = [sr_full[:, frame_idx] for frame_idx in range(7)]
+
+            all_scores = []
+            for frame_idx, frame_id in enumerate(range(1, 8)):
+                prev_idx = max(frame_idx - 1, 0)
+                next_idx = min(frame_idx + 1, 6)
+                scores = compute_metrics(
+                    args.metrics,
+                    gt_full[:, frame_idx],
+                    full_preds[frame_idx],
+                    full_preds[prev_idx],
+                    full_preds[next_idx],
+                    device=pipeline.device,
+                )
+                all_scores.append(scores)
+                if should_save:
+                    save_image(
+                        full_preds[frame_idx],
+                        join(item_dir, f"output_im{frame_id}.png"),
+                        value_range=(-1, 1),
+                        normalize=True,
+                    )
+                if should_save and args.save_sr_images and frame_id % 2 == 1:
+                    save_image(
+                        full_preds[frame_idx],
+                        join(item_dir, f"sr_im{frame_id}.png"),
+                        value_range=(-1, 1),
+                        normalize=True,
+                    )
+
+            odd_scores = [all_scores[i] for i in (0, 2, 4, 6)]
+            even_scores = [all_scores[i] for i in (1, 3, 5)]
+            extend_results(results, "all7", all_scores, args.metrics)
+            extend_results(results, "odd4", odd_scores, args.metrics)
+            extend_results(results, "even3", even_scores, args.metrics)
+            print(
+                name,
+                {
+                    "all7": mean_scores(all_scores, args.metrics),
+                    "odd4": mean_scores(odd_scores, args.metrics),
+                    "even3": mean_scores(even_scores, args.metrics),
+                },
+            )
+
+    averages = average_results(results)
+    average_key = "target" if args.eval_pipeline == "triplet" else "all7"
+    average = averages[average_key]
+    for group, group_average in averages.items():
+        print(f"Average {group}", group_average)
     if args.summary_json:
         summary = {
             "split": args.split,
             "num_samples": len(triplet_folders),
+            "eval_pipeline": args.eval_pipeline,
             "average": average,
+            "averages": averages,
+            "metric_frame_counts": result_counts(results),
             "use_ddim": args.use_ddim,
             "ddim_eta": args.ddim_eta,
             "seed": args.seed,
