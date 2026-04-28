@@ -51,6 +51,10 @@ DEFAULT_BASE_CONFIG="$ROOT_DIR/configs/ldm/ldmvfi-vqflow-f32-c256-concat_max.yam
 SAVE_IMAGES="${SAVE_IMAGES:-0}"
 SAVE_SR_IMAGES="${SAVE_SR_IMAGES:-0}"
 SAVE_MAX_SAMPLES="${SAVE_MAX_SAMPLES:-0}"
+EVEN_CORRECTOR_CKPT="${EVEN_CORRECTOR_CKPT:-}"
+EVEN_CORRECTOR_HIDDEN_CHANNELS="${EVEN_CORRECTOR_HIDDEN_CHANNELS:-32}"
+EVEN_CORRECTOR_NUM_BLOCKS="${EVEN_CORRECTOR_NUM_BLOCKS:-4}"
+EVEN_CORRECTOR_MAX_RESIDUE="${EVEN_CORRECTOR_MAX_RESIDUE:-0.25}"
 USE_DDIM="${USE_DDIM:-1}"
 DDIM_ETA="${DDIM_ETA:-0}"
 SEED="${SEED:-1234}"
@@ -103,6 +107,10 @@ echo "max_samples=$MAX_SAMPLES"
 echo "save_images=$SAVE_IMAGES"
 echo "save_sr_images=$SAVE_SR_IMAGES"
 echo "save_max_samples=$SAVE_MAX_SAMPLES"
+echo "even_corrector_ckpt=${EVEN_CORRECTOR_CKPT:-default}"
+echo "even_corrector_hidden_channels=$EVEN_CORRECTOR_HIDDEN_CHANNELS"
+echo "even_corrector_num_blocks=$EVEN_CORRECTOR_NUM_BLOCKS"
+echo "even_corrector_max_residue=$EVEN_CORRECTOR_MAX_RESIDUE"
 echo "use_ddim=$USE_DDIM"
 echo "ddim_eta=$DDIM_ETA"
 echo "seed=$SEED"
@@ -195,6 +203,14 @@ for SPLIT_NAME in "${SPLIT_ARRAY[@]}"; do
 
   if [[ "$SAVE_MAX_SAMPLES" != "0" ]]; then
     CMD+=(--save_max_samples "$SAVE_MAX_SAMPLES")
+  fi
+  if [[ -n "$EVEN_CORRECTOR_CKPT" ]]; then
+    CMD+=(
+      --even_corrector_ckpt "$EVEN_CORRECTOR_CKPT"
+      --even_corrector_hidden_channels "$EVEN_CORRECTOR_HIDDEN_CHANNELS"
+      --even_corrector_num_blocks "$EVEN_CORRECTOR_NUM_BLOCKS"
+      --even_corrector_max_residue "$EVEN_CORRECTOR_MAX_RESIDUE"
+    )
   fi
 
   if [[ "$USE_RAW_WEIGHTS" == "1" || "$USE_RAW_WEIGHTS" == "true" ]]; then

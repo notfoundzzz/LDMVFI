@@ -11,6 +11,7 @@ from torchvision.utils import save_image
 from omegaconf import OmegaConf
 
 import utility
+from ldm.models.even_residual_corrector import load_even_corrector
 from ldm.models.rvrt_ldmvfi_pipeline import RVRTLDMVFIPipeline
 
 
@@ -264,6 +265,10 @@ def main():
     parser.add_argument("--save_images", action="store_true")
     parser.add_argument("--save_sr_images", action="store_true")
     parser.add_argument("--save_max_samples", type=int, default=0)
+    parser.add_argument("--even_corrector_ckpt", default=None)
+    parser.add_argument("--even_corrector_hidden_channels", type=int, default=32)
+    parser.add_argument("--even_corrector_num_blocks", type=int, default=4)
+    parser.add_argument("--even_corrector_max_residue", type=float, default=0.25)
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--use_ema", dest="use_ema", action="store_true")
     parser.add_argument("--use_raw_weights", dest="use_ema", action="store_false")
@@ -340,6 +345,16 @@ def main():
         use_ema=args.use_ema,
         strict_checkpoint=args.strict_checkpoint,
     )
+    even_corrector = None
+    if args.even_corrector_ckpt:
+        even_corrector = load_even_corrector(
+            args.even_corrector_ckpt,
+            pipeline.device,
+            hidden_channels=args.even_corrector_hidden_channels,
+            num_blocks=args.even_corrector_num_blocks,
+            max_residue=args.even_corrector_max_residue,
+        )
+        print(f"Loaded even-frame residual corrector from {args.even_corrector_ckpt}")
     result_groups = ["target"] if args.eval_pipeline == "triplet" else ["all7", "odd4", "even3"]
     results = init_results(result_groups, args.metrics)
     dataset_root_hr = args.dataset_root_hr
@@ -404,6 +419,8 @@ def main():
                             ddim_eta=args.ddim_eta,
                             seed=args.seed + pair_idx,
                         )
+                        if even_corrector is not None:
+                            pred = even_corrector(sr_odd[:, pair_idx], pred, sr_odd[:, pair_idx + 1])
                         even_preds.append(pred)
                     full_preds = [
                         sr_odd[:, 0],
@@ -513,6 +530,7 @@ def main():
             if args.rvrt_flow_adapter_zero_init_last is not None
             else None,
             "rvrt_flow_adapter_max_residue_magnitude": args.rvrt_flow_adapter_max_residue_magnitude,
+            "even_corrector_ckpt": args.even_corrector_ckpt,
             "flow_condition_mode": str(ldm_config.model.params.get("flow_condition_mode", "fused")),
             "flow_backend": str(ldm_config.model.params.get("flow_backend", "farneback")),
             "flow_raft_variant": str(ldm_config.model.params.get("flow_raft_variant", "large")),
