@@ -200,6 +200,12 @@ def save_checkpoint(corrector, optimizer, args, step, out_dir):
     torch.save(payload, join(out_dir, f"step_{step:06d}_even_corrector.pth"))
 
 
+def estimate_remaining_events(step, max_steps, interval):
+    if interval <= 0:
+        return 0
+    return sum(1 for next_step in range(step + 1, max_steps + 1) if next_step % interval == 0 or next_step == max_steps)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ldm_config", default="/data/Shenzhen/zhahongli/LDMVFI/configs/ldm/ldmvfi-vqflow-f32-c256-concat_max.yaml")
@@ -311,10 +317,17 @@ def main():
     start_time = time.time()
     last_log_time = start_time
     last_log_step = 0
+    train_elapsed = 0.0
+    last_log_train_elapsed = 0.0
+    val_elapsed_total = 0.0
+    val_runs = 0
+    save_elapsed_total = 0.0
+    save_runs = 0
     while step < args.max_steps:
         if train_sampler is not None:
             train_sampler.set_epoch(epoch)
         for batch in train_loader:
+            step_start = time.time()
             corrector.train()
             lr_odd = batch["lr_odd"].to(device)
             gt_even = batch["gt_even"].to(device)
@@ -336,20 +349,29 @@ def main():
             optimizer.step()
 
             step += 1
+            train_elapsed += time.time() - step_start
             if is_main_process(rank) and (step == 1 or step % 25 == 0):
                 now = time.time()
                 elapsed = now - start_time
-                avg_step_time = elapsed / max(step, 1)
-                recent_step_time = (now - last_log_time) / max(step - last_log_step, 1)
-                eta = avg_step_time * max(args.max_steps - step, 0)
+                avg_train_step_time = train_elapsed / max(step, 1)
+                recent_train_step_time = (train_elapsed - last_log_train_elapsed) / max(step - last_log_step, 1)
+                remaining_steps = max(args.max_steps - step, 0)
+                train_eta = avg_train_step_time * remaining_steps
+                remaining_val_runs = estimate_remaining_events(step, args.max_steps, args.val_interval)
+                remaining_save_runs = estimate_remaining_events(step, args.max_steps, args.save_interval)
+                avg_val_time = val_elapsed_total / max(val_runs, 1)
+                avg_save_time = save_elapsed_total / max(save_runs, 1)
+                eta_with_val = train_eta + avg_val_time * remaining_val_runs + avg_save_time * remaining_save_runs
                 print(
                     f"step={step}/{args.max_steps} loss={loss.item():.6f} "
-                    f"elapsed={elapsed/60:.1f}m avg_step={avg_step_time:.2f}s "
-                    f"recent_step={recent_step_time:.2f}s eta={eta/60:.1f}m",
+                    f"elapsed={elapsed/60:.1f}m train_elapsed={train_elapsed/60:.1f}m "
+                    f"avg_train_step={avg_train_step_time:.2f}s recent_train_step={recent_train_step_time:.2f}s "
+                    f"train_eta={train_eta/60:.1f}m eta_with_val={eta_with_val/60:.1f}m",
                     flush=True,
                 )
                 last_log_time = now
                 last_log_step = step
+                last_log_train_elapsed = train_elapsed
             if step % args.val_interval == 0 or step == args.max_steps:
                 if is_main_process(rank):
                     val_start = time.time()
@@ -361,6 +383,8 @@ def main():
                         device,
                     )
                     val_elapsed = time.time() - val_start
+                    val_elapsed_total += val_elapsed
+                    val_runs += 1
                     print(
                         f"validation step={step} loss={val_loss:.6f} even3={val_scores} "
                         f"val_time={val_elapsed/60:.1f}m",
@@ -369,10 +393,15 @@ def main():
                 if distributed:
                     dist.barrier()
             if step % args.save_interval == 0 or step == args.max_steps:
+                save_start = time.time()
                 if is_main_process(rank):
                     save_checkpoint(corrector, optimizer, args, step, args.out_dir)
                 if distributed:
                     dist.barrier()
+                save_elapsed = time.time() - save_start
+                if is_main_process(rank):
+                    save_elapsed_total += save_elapsed
+                    save_runs += 1
             if step >= args.max_steps:
                 break
         epoch += 1
