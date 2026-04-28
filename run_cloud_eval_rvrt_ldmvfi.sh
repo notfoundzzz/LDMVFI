@@ -55,6 +55,10 @@ EVEN_CORRECTOR_CKPT="${EVEN_CORRECTOR_CKPT:-}"
 EVEN_CORRECTOR_HIDDEN_CHANNELS="${EVEN_CORRECTOR_HIDDEN_CHANNELS:-32}"
 EVEN_CORRECTOR_NUM_BLOCKS="${EVEN_CORRECTOR_NUM_BLOCKS:-4}"
 EVEN_CORRECTOR_MAX_RESIDUE="${EVEN_CORRECTOR_MAX_RESIDUE:-0.25}"
+EVEN_CORRECTOR_USE_FLOW_INPUTS="${EVEN_CORRECTOR_USE_FLOW_INPUTS:-0}"
+EVEN_CORRECTOR_FLOW_BACKEND="${EVEN_CORRECTOR_FLOW_BACKEND:-farneback}"
+EVEN_CORRECTOR_FLOW_RAFT_VARIANT="${EVEN_CORRECTOR_FLOW_RAFT_VARIANT:-large}"
+EVEN_CORRECTOR_FLOW_RAFT_CKPT="${EVEN_CORRECTOR_FLOW_RAFT_CKPT:-}"
 USE_DDIM="${USE_DDIM:-1}"
 DDIM_ETA="${DDIM_ETA:-0}"
 SEED="${SEED:-1234}"
@@ -111,6 +115,10 @@ echo "even_corrector_ckpt=${EVEN_CORRECTOR_CKPT:-default}"
 echo "even_corrector_hidden_channels=$EVEN_CORRECTOR_HIDDEN_CHANNELS"
 echo "even_corrector_num_blocks=$EVEN_CORRECTOR_NUM_BLOCKS"
 echo "even_corrector_max_residue=$EVEN_CORRECTOR_MAX_RESIDUE"
+echo "even_corrector_use_flow_inputs=$EVEN_CORRECTOR_USE_FLOW_INPUTS"
+echo "even_corrector_flow_backend=$EVEN_CORRECTOR_FLOW_BACKEND"
+echo "even_corrector_flow_raft_variant=$EVEN_CORRECTOR_FLOW_RAFT_VARIANT"
+echo "even_corrector_flow_raft_ckpt=${EVEN_CORRECTOR_FLOW_RAFT_CKPT:-default}"
 echo "use_ddim=$USE_DDIM"
 echo "ddim_eta=$DDIM_ETA"
 echo "seed=$SEED"
@@ -210,7 +218,13 @@ for SPLIT_NAME in "${SPLIT_ARRAY[@]}"; do
       --even_corrector_hidden_channels "$EVEN_CORRECTOR_HIDDEN_CHANNELS"
       --even_corrector_num_blocks "$EVEN_CORRECTOR_NUM_BLOCKS"
       --even_corrector_max_residue "$EVEN_CORRECTOR_MAX_RESIDUE"
+      --even_corrector_use_flow_inputs "$EVEN_CORRECTOR_USE_FLOW_INPUTS"
+      --even_corrector_flow_backend "$EVEN_CORRECTOR_FLOW_BACKEND"
+      --even_corrector_flow_raft_variant "$EVEN_CORRECTOR_FLOW_RAFT_VARIANT"
     )
+    if [[ -n "$EVEN_CORRECTOR_FLOW_RAFT_CKPT" ]]; then
+      CMD+=(--even_corrector_flow_raft_ckpt "$EVEN_CORRECTOR_FLOW_RAFT_CKPT")
+    fi
   fi
 
   if [[ "$USE_RAW_WEIGHTS" == "1" || "$USE_RAW_WEIGHTS" == "true" ]]; then

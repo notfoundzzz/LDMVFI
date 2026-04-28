@@ -40,6 +40,10 @@ LOG_ROOT="${LOG_ROOT:-$ROOT_DIR/logs}"
 HIDDEN_CHANNELS="${HIDDEN_CHANNELS:-32}"
 NUM_BLOCKS="${NUM_BLOCKS:-4}"
 MAX_RESIDUE="${MAX_RESIDUE:-0.25}"
+USE_FLOW_INPUTS="${USE_FLOW_INPUTS:-0}"
+EVEN_FLOW_BACKEND="${EVEN_FLOW_BACKEND:-farneback}"
+EVEN_FLOW_RAFT_VARIANT="${EVEN_FLOW_RAFT_VARIANT:-large}"
+EVEN_FLOW_RAFT_CKPT="${EVEN_FLOW_RAFT_CKPT:-}"
 LR="${LR:-1e-4}"
 WEIGHT_DECAY="${WEIGHT_DECAY:-0}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
@@ -92,6 +96,10 @@ echo "out_dir=$OUT_DIR"
 echo "hidden_channels=$HIDDEN_CHANNELS"
 echo "num_blocks=$NUM_BLOCKS"
 echo "max_residue=$MAX_RESIDUE"
+echo "use_flow_inputs=$USE_FLOW_INPUTS"
+echo "even_flow_backend=$EVEN_FLOW_BACKEND"
+echo "even_flow_raft_variant=$EVEN_FLOW_RAFT_VARIANT"
+echo "even_flow_raft_ckpt=${EVEN_FLOW_RAFT_CKPT:-default}"
 echo "lr=$LR"
 echo "batch_size=$BATCH_SIZE"
 echo "max_steps=$MAX_STEPS"
@@ -124,6 +132,9 @@ CMD=(
   --hidden_channels "$HIDDEN_CHANNELS"
   --num_blocks "$NUM_BLOCKS"
   --max_residue "$MAX_RESIDUE"
+  --use_flow_inputs "$USE_FLOW_INPUTS"
+  --flow_backend "$EVEN_FLOW_BACKEND"
+  --flow_raft_variant "$EVEN_FLOW_RAFT_VARIANT"
   --lr "$LR"
   --weight_decay "$WEIGHT_DECAY"
   --batch_size "$BATCH_SIZE"
@@ -140,6 +151,9 @@ CMD=(
 
 if [[ -n "$RVRT_RAFT_CKPT" ]]; then
   CMD+=(--rvrt_raft_ckpt "$RVRT_RAFT_CKPT")
+fi
+if [[ -n "$EVEN_FLOW_RAFT_CKPT" ]]; then
+  CMD+=(--flow_raft_ckpt "$EVEN_FLOW_RAFT_CKPT")
 fi
 if [[ "$USE_RAW_WEIGHTS" == "1" || "$USE_RAW_WEIGHTS" == "true" ]]; then
   CMD+=(--use_raw_weights)

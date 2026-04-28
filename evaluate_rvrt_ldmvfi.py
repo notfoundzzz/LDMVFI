@@ -12,6 +12,7 @@ from omegaconf import OmegaConf
 
 import utility
 from ldm.models.even_residual_corrector import load_even_corrector
+from ldm.models.flow_guidance import build_flow_aligned_input_pair
 from ldm.models.rvrt_ldmvfi_pipeline import RVRTLDMVFIPipeline
 
 
@@ -269,6 +270,10 @@ def main():
     parser.add_argument("--even_corrector_hidden_channels", type=int, default=32)
     parser.add_argument("--even_corrector_num_blocks", type=int, default=4)
     parser.add_argument("--even_corrector_max_residue", type=float, default=0.25)
+    parser.add_argument("--even_corrector_use_flow_inputs", type=int, choices=[0, 1], default=0)
+    parser.add_argument("--even_corrector_flow_backend", choices=["farneback", "raft"], default="farneback")
+    parser.add_argument("--even_corrector_flow_raft_variant", choices=["small", "large"], default="large")
+    parser.add_argument("--even_corrector_flow_raft_ckpt", default=None)
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--use_ema", dest="use_ema", action="store_true")
     parser.add_argument("--use_raw_weights", dest="use_ema", action="store_false")
@@ -420,7 +425,25 @@ def main():
                             seed=args.seed + pair_idx,
                         )
                         if even_corrector is not None:
-                            pred = even_corrector(sr_odd[:, pair_idx], pred, sr_odd[:, pair_idx + 1])
+                            warped_prev = None
+                            warped_next = None
+                            if args.even_corrector_use_flow_inputs:
+                                warped_prev, warped_next = build_flow_aligned_input_pair(
+                                    sr_odd[:, pair_idx],
+                                    sr_odd[:, pair_idx + 1],
+                                    sr_odd[:, pair_idx],
+                                    sr_odd[:, pair_idx + 1],
+                                    backend=args.even_corrector_flow_backend,
+                                    raft_variant=args.even_corrector_flow_raft_variant,
+                                    raft_ckpt=args.even_corrector_flow_raft_ckpt,
+                                )
+                            pred = even_corrector(
+                                sr_odd[:, pair_idx],
+                                pred,
+                                sr_odd[:, pair_idx + 1],
+                                warped_prev,
+                                warped_next,
+                            )
                         even_preds.append(pred)
                     full_preds = [
                         sr_odd[:, 0],
@@ -531,6 +554,7 @@ def main():
             else None,
             "rvrt_flow_adapter_max_residue_magnitude": args.rvrt_flow_adapter_max_residue_magnitude,
             "even_corrector_ckpt": args.even_corrector_ckpt,
+            "even_corrector_use_flow_inputs": bool(args.even_corrector_use_flow_inputs),
             "flow_condition_mode": str(ldm_config.model.params.get("flow_condition_mode", "fused")),
             "flow_backend": str(ldm_config.model.params.get("flow_backend", "farneback")),
             "flow_raft_variant": str(ldm_config.model.params.get("flow_raft_variant", "large")),

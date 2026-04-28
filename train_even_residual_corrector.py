@@ -19,6 +19,7 @@ from evaluate_rvrt_ldmvfi import (
     restore_flow_guidance_metadata,
 )
 from ldm.models.even_residual_corrector import EvenFrameResidualCorrector
+from ldm.models.flow_guidance import build_flow_aligned_input_pair
 from ldm.models.rvrt_ldmvfi_pipeline import RVRTLDMVFIPipeline
 
 
@@ -119,6 +120,21 @@ def flatten_even(prev, pred, nxt, gt):
 
 
 @torch.no_grad()
+def make_flow_inputs(prev_f, nxt_f, args):
+    if not args.use_flow_inputs:
+        return None, None
+    return build_flow_aligned_input_pair(
+        prev_f,
+        nxt_f,
+        prev_f,
+        nxt_f,
+        backend=args.flow_backend,
+        raft_variant=args.flow_raft_variant,
+        raft_ckpt=args.flow_raft_ckpt,
+    )
+
+
+@torch.no_grad()
 def validate(pipeline, corrector, loader, args, device):
     corrector.eval()
     losses = []
@@ -135,7 +151,8 @@ def validate(pipeline, corrector, loader, args, device):
             ddim_eta=args.ddim_eta,
         )
         prev_f, pred_f, nxt_f, gt_f = flatten_even(prev, pred, nxt, gt_even)
-        refined = corrector(prev_f, pred_f, nxt_f)
+        warped_prev, warped_next = make_flow_inputs(prev_f, nxt_f, args)
+        refined = corrector(prev_f, pred_f, nxt_f, warped_prev, warped_next)
         losses.append(charbonnier_loss(refined, gt_f).item())
         for i in range(refined.shape[0]):
             scores.append(compute_metrics(args.metrics, gt_f[i : i + 1], refined[i : i + 1], device=device))
@@ -156,6 +173,7 @@ def save_checkpoint(corrector, optimizer, args, step, out_dir):
             "hidden_channels": args.hidden_channels,
             "num_blocks": args.num_blocks,
             "max_residue": args.max_residue,
+            "use_flow_inputs": bool(args.use_flow_inputs),
         },
     }
     torch.save(payload, join(out_dir, "last_even_corrector.pth"))
@@ -185,6 +203,10 @@ def main():
     parser.add_argument("--hidden_channels", type=int, default=32)
     parser.add_argument("--num_blocks", type=int, default=4)
     parser.add_argument("--max_residue", type=float, default=0.25)
+    parser.add_argument("--use_flow_inputs", type=int, default=0)
+    parser.add_argument("--flow_backend", choices=["farneback", "raft"], default="farneback")
+    parser.add_argument("--flow_raft_variant", choices=["small", "large"], default="large")
+    parser.add_argument("--flow_raft_ckpt", default=None)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=0.0)
     parser.add_argument("--batch_size", type=int, default=1)
@@ -223,6 +245,7 @@ def main():
         hidden_channels=args.hidden_channels,
         num_blocks=args.num_blocks,
         max_residue=args.max_residue,
+        use_flow_inputs=bool(args.use_flow_inputs),
     ).to(device)
     optimizer = torch.optim.AdamW(corrector.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
@@ -260,7 +283,8 @@ def main():
                 ddim_eta=args.ddim_eta,
             )
             prev_f, pred_f, nxt_f, gt_f = flatten_even(prev, pred, nxt, gt_even)
-            refined = corrector(prev_f, pred_f, nxt_f)
+            warped_prev, warped_next = make_flow_inputs(prev_f, nxt_f, args)
+            refined = corrector(prev_f, pred_f, nxt_f, warped_prev, warped_next)
             loss = charbonnier_loss(refined, gt_f)
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
