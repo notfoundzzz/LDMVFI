@@ -270,6 +270,8 @@ def main():
     parser.add_argument("--even_corrector_hidden_channels", type=int, default=32)
     parser.add_argument("--even_corrector_num_blocks", type=int, default=4)
     parser.add_argument("--even_corrector_max_residue", type=float, default=0.25)
+    parser.add_argument("--even_corrector_mode", choices=["residual", "fusion"], default="residual")
+    parser.add_argument("--even_corrector_fusion_init_pred_logit", type=float, default=8.0)
     parser.add_argument("--even_corrector_use_flow_inputs", type=int, choices=[0, 1], default=0)
     parser.add_argument("--even_corrector_flow_backend", choices=["farneback", "raft"], default="farneback")
     parser.add_argument("--even_corrector_flow_raft_variant", choices=["small", "large"], default="large")
@@ -358,8 +360,10 @@ def main():
             hidden_channels=args.even_corrector_hidden_channels,
             num_blocks=args.even_corrector_num_blocks,
             max_residue=args.even_corrector_max_residue,
+            corrector_mode=args.even_corrector_mode,
+            fusion_init_pred_logit=args.even_corrector_fusion_init_pred_logit,
         )
-        print(f"Loaded even-frame residual corrector from {args.even_corrector_ckpt}")
+        print(f"Loaded even-frame corrector from {args.even_corrector_ckpt}")
     result_groups = ["target"] if args.eval_pipeline == "triplet" else ["all7", "odd4", "even3"]
     results = init_results(result_groups, args.metrics)
     dataset_root_hr = args.dataset_root_hr
@@ -554,6 +558,7 @@ def main():
             else None,
             "rvrt_flow_adapter_max_residue_magnitude": args.rvrt_flow_adapter_max_residue_magnitude,
             "even_corrector_ckpt": args.even_corrector_ckpt,
+            "even_corrector_mode": args.even_corrector_mode,
             "even_corrector_use_flow_inputs": bool(args.even_corrector_use_flow_inputs),
             "flow_condition_mode": str(ldm_config.model.params.get("flow_condition_mode", "fused")),
             "flow_backend": str(ldm_config.model.params.get("flow_backend", "farneback")),

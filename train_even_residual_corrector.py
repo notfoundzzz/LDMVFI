@@ -194,6 +194,8 @@ def save_checkpoint(corrector, optimizer, args, step, out_dir):
             "num_blocks": args.num_blocks,
             "max_residue": args.max_residue,
             "use_flow_inputs": bool(args.use_flow_inputs),
+            "corrector_mode": getattr(args, "corrector_mode", "residual"),
+            "fusion_init_pred_logit": getattr(args, "fusion_init_pred_logit", 8.0),
         },
     }
     torch.save(payload, join(out_dir, "last_even_corrector.pth"))
@@ -230,6 +232,8 @@ def main():
     parser.add_argument("--num_blocks", type=int, default=4)
     parser.add_argument("--max_residue", type=float, default=0.25)
     parser.add_argument("--use_flow_inputs", type=int, default=0)
+    parser.add_argument("--corrector_mode", choices=["residual", "fusion"], default="residual")
+    parser.add_argument("--fusion_init_pred_logit", type=float, default=8.0)
     parser.add_argument("--flow_backend", choices=["farneback", "raft"], default="farneback")
     parser.add_argument("--flow_raft_variant", choices=["small", "large"], default="large")
     parser.add_argument("--flow_raft_ckpt", default=None)
@@ -278,6 +282,8 @@ def main():
         num_blocks=args.num_blocks,
         max_residue=args.max_residue,
         use_flow_inputs=bool(args.use_flow_inputs),
+        corrector_mode=args.corrector_mode,
+        fusion_init_pred_logit=args.fusion_init_pred_logit,
     ).to(device)
 
     train_set = VimeoOddEvenDataset(

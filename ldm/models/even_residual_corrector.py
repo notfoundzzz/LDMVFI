@@ -9,12 +9,19 @@ class EvenFrameResidualCorrector(nn.Module):
         num_blocks=4,
         max_residue=0.25,
         use_flow_inputs=False,
+        corrector_mode="residual",
+        fusion_init_pred_logit=8.0,
         zero_init_last=True,
     ):
         super().__init__()
         self.max_residue = float(max_residue)
         self.use_flow_inputs = bool(use_flow_inputs)
+        self.corrector_mode = str(corrector_mode)
+        self.fusion_init_pred_logit = float(fusion_init_pred_logit)
+        if self.corrector_mode not in {"residual", "fusion"}:
+            raise ValueError(f"Unsupported even corrector mode: {self.corrector_mode}")
         in_channels = 15 if self.use_flow_inputs else 9
+        out_channels = 8 if self.corrector_mode == "fusion" else 3
         layers = [
             nn.Conv2d(in_channels, hidden_channels, 3, padding=1),
             nn.LeakyReLU(0.1, inplace=True),
@@ -26,11 +33,16 @@ class EvenFrameResidualCorrector(nn.Module):
                     nn.LeakyReLU(0.1, inplace=True),
                 ]
             )
-        layers.append(nn.Conv2d(hidden_channels, 3, 3, padding=1))
+        layers.append(nn.Conv2d(hidden_channels, out_channels, 3, padding=1))
         self.net = nn.Sequential(*layers)
         if zero_init_last:
             nn.init.zeros_(self.net[-1].weight)
             nn.init.zeros_(self.net[-1].bias)
+            if self.corrector_mode == "fusion":
+                # Bias the initial softmax toward the LDMVFI prediction so
+                # fusion mode starts near the existing baseline.
+                with torch.no_grad():
+                    self.net[-1].bias[0] = self.fusion_init_pred_logit
 
     def forward(self, prev_sr, pred_even, next_sr, warped_prev=None, warped_next=None):
         inputs = [prev_sr, pred_even, next_sr]
@@ -38,11 +50,31 @@ class EvenFrameResidualCorrector(nn.Module):
             if warped_prev is None or warped_next is None:
                 warped_prev, warped_next = prev_sr, next_sr
             inputs.extend([warped_prev, warped_next])
-        residual = torch.tanh(self.net(torch.cat(inputs, dim=1)))
-        return torch.clamp(pred_even + self.max_residue * residual, -1.0, 1.0)
+        features = self.net(torch.cat(inputs, dim=1))
+        if self.corrector_mode == "residual":
+            residual = torch.tanh(features)
+            return torch.clamp(pred_even + self.max_residue * residual, -1.0, 1.0)
+
+        if warped_prev is None or warped_next is None:
+            warped_prev, warped_next = prev_sr, next_sr
+        neighbor_blend = torch.clamp(0.5 * (prev_sr + next_sr), -1.0, 1.0)
+        warp_blend = torch.clamp(0.5 * (warped_prev + warped_next), -1.0, 1.0)
+        candidates = torch.stack([pred_even, warped_prev, warped_next, neighbor_blend, warp_blend], dim=1)
+        weights = torch.softmax(features[:, :5], dim=1).unsqueeze(2)
+        base = torch.sum(weights * candidates, dim=1)
+        residual = torch.tanh(features[:, 5:8])
+        return torch.clamp(base + self.max_residue * residual, -1.0, 1.0)
 
 
-def load_even_corrector(ckpt_path, device, hidden_channels=32, num_blocks=4, max_residue=0.25):
+def load_even_corrector(
+    ckpt_path,
+    device,
+    hidden_channels=32,
+    num_blocks=4,
+    max_residue=0.25,
+    corrector_mode="residual",
+    fusion_init_pred_logit=8.0,
+):
     payload = torch.load(ckpt_path, map_location="cpu")
     args = payload.get("args", {}) if isinstance(payload, dict) else {}
     model = EvenFrameResidualCorrector(
@@ -50,6 +82,8 @@ def load_even_corrector(ckpt_path, device, hidden_channels=32, num_blocks=4, max
         num_blocks=int(args.get("num_blocks", num_blocks)),
         max_residue=float(args.get("max_residue", max_residue)),
         use_flow_inputs=bool(args.get("use_flow_inputs", False)),
+        corrector_mode=str(args.get("corrector_mode", corrector_mode)),
+        fusion_init_pred_logit=float(args.get("fusion_init_pred_logit", fusion_init_pred_logit)),
         zero_init_last=False,
     )
     state_dict = payload.get("state_dict", payload) if isinstance(payload, dict) else payload
