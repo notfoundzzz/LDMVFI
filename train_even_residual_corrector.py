@@ -8,6 +8,7 @@ from os.path import join
 import numpy as np
 import torch
 import torch.distributed as dist
+import torch.nn.functional as F
 from omegaconf import OmegaConf
 from PIL import Image
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -44,6 +45,52 @@ def is_main_process(rank):
 
 def charbonnier_loss(pred, target, eps=1e-6):
     return torch.sqrt((pred - target) ** 2 + eps).mean()
+
+
+def edge_loss(pred, target):
+    pred_dx = pred[..., :, 1:] - pred[..., :, :-1]
+    target_dx = target[..., :, 1:] - target[..., :, :-1]
+    pred_dy = pred[..., 1:, :] - pred[..., :-1, :]
+    target_dy = target[..., 1:, :] - target[..., :-1, :]
+    return 0.5 * (charbonnier_loss(pred_dx, target_dx) + charbonnier_loss(pred_dy, target_dy))
+
+
+def ssim_loss(pred, target, window_size=11):
+    window_size = int(window_size)
+    if window_size < 3 or window_size % 2 == 0:
+        raise ValueError(f"ssim_window must be an odd integer >= 3, got {window_size}")
+    pred = ((pred + 1.0) * 0.5).clamp(0.0, 1.0)
+    target = ((target + 1.0) * 0.5).clamp(0.0, 1.0)
+    pad = window_size // 2
+
+    def smooth(x):
+        return F.avg_pool2d(F.pad(x, (pad, pad, pad, pad), mode="reflect"), window_size, stride=1)
+
+    mu_pred = smooth(pred)
+    mu_target = smooth(target)
+    mu_pred_sq = mu_pred.pow(2)
+    mu_target_sq = mu_target.pow(2)
+    mu_pred_target = mu_pred * mu_target
+    sigma_pred_sq = smooth(pred * pred) - mu_pred_sq
+    sigma_target_sq = smooth(target * target) - mu_target_sq
+    sigma_pred_target = smooth(pred * target) - mu_pred_target
+    c1 = 0.01**2
+    c2 = 0.03**2
+    ssim = ((2 * mu_pred_target + c1) * (2 * sigma_pred_target + c2)) / (
+        (mu_pred_sq + mu_target_sq + c1) * (sigma_pred_sq + sigma_target_sq + c2)
+    )
+    return 1.0 - ssim.mean()
+
+
+def corrector_training_loss(pred, target, args):
+    loss = charbonnier_loss(pred, target)
+    edge_weight = float(getattr(args, "edge_weight", 0.0))
+    ssim_weight = float(getattr(args, "ssim_weight", 0.0))
+    if edge_weight > 0:
+        loss = loss + edge_weight * edge_loss(pred, target)
+    if ssim_weight > 0:
+        loss = loss + ssim_weight * ssim_loss(pred, target, getattr(args, "ssim_window", 11))
+    return loss
 
 
 def load_sequence(folder, frame_ids, transform):
@@ -196,6 +243,9 @@ def save_checkpoint(corrector, optimizer, args, step, out_dir):
             "use_flow_inputs": bool(args.use_flow_inputs),
             "corrector_mode": getattr(args, "corrector_mode", "residual"),
             "fusion_init_pred_logit": getattr(args, "fusion_init_pred_logit", 8.0),
+            "edge_weight": getattr(args, "edge_weight", 0.0),
+            "ssim_weight": getattr(args, "ssim_weight", 0.0),
+            "ssim_window": getattr(args, "ssim_window", 11),
         },
     }
     torch.save(payload, join(out_dir, "last_even_corrector.pth"))
@@ -237,6 +287,9 @@ def main():
     parser.add_argument("--flow_backend", choices=["farneback", "raft"], default="farneback")
     parser.add_argument("--flow_raft_variant", choices=["small", "large"], default="large")
     parser.add_argument("--flow_raft_ckpt", default=None)
+    parser.add_argument("--edge_weight", type=float, default=0.0)
+    parser.add_argument("--ssim_weight", type=float, default=0.0)
+    parser.add_argument("--ssim_window", type=int, default=11)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=0.0)
     parser.add_argument("--batch_size", type=int, default=1)
@@ -317,6 +370,13 @@ def main():
     optimizer = torch.optim.AdamW(corrector.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     if is_main_process(rank):
         print(f"datasets ready: train={len(train_set)} val={len(val_items)}", flush=True)
+        print(
+            f"corrector hidden={args.hidden_channels} blocks={args.num_blocks} "
+            f"max_residue={args.max_residue} use_flow_inputs={bool(args.use_flow_inputs)} "
+            f"mode={args.corrector_mode} edge_weight={args.edge_weight} "
+            f"ssim_weight={args.ssim_weight} ssim_window={args.ssim_window}",
+            flush=True,
+        )
 
     step = 0
     epoch = 0
@@ -348,7 +408,7 @@ def main():
             prev_f, pred_f, nxt_f, gt_f = flatten_even(prev, pred, nxt, gt_even)
             warped_prev, warped_next = make_flow_inputs(prev_f, nxt_f, args)
             refined = corrector(prev_f, pred_f, nxt_f, warped_prev, warped_next)
-            loss = charbonnier_loss(refined, gt_f)
+            loss = corrector_training_loss(refined, gt_f, args)
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(corrector.parameters(), max_norm=1.0)

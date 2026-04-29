@@ -17,6 +17,7 @@ from evaluate_rvrt_ldmvfi import compute_metrics
 from ldm.models.even_residual_corrector import EvenFrameResidualCorrector
 from train_even_residual_corrector import (
     charbonnier_loss,
+    corrector_training_loss,
     estimate_remaining_events,
     init_distributed,
     is_main_process,
@@ -113,6 +114,9 @@ def main():
     parser.add_argument("--use_flow_inputs", type=int, default=0)
     parser.add_argument("--corrector_mode", choices=["residual", "fusion"], default="residual")
     parser.add_argument("--fusion_init_pred_logit", type=float, default=8.0)
+    parser.add_argument("--edge_weight", type=float, default=0.0)
+    parser.add_argument("--ssim_weight", type=float, default=0.0)
+    parser.add_argument("--ssim_window", type=int, default=11)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=0.0)
     parser.add_argument("--batch_size", type=int, default=8)
@@ -180,7 +184,8 @@ def main():
         print(
             f"corrector hidden={args.hidden_channels} blocks={args.num_blocks} "
             f"max_residue={args.max_residue} use_flow_inputs={bool(args.use_flow_inputs)} "
-            f"mode={args.corrector_mode}",
+            f"mode={args.corrector_mode} edge_weight={args.edge_weight} "
+            f"ssim_weight={args.ssim_weight} ssim_window={args.ssim_window}",
             flush=True,
         )
 
@@ -204,7 +209,7 @@ def main():
                 batch, device, bool(args.use_flow_inputs)
             )
             refined = corrector(prev_f, pred_f, nxt_f, warped_prev, warped_next)
-            loss = charbonnier_loss(refined, gt_f)
+            loss = corrector_training_loss(refined, gt_f, args)
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(corrector.parameters(), max_norm=1.0)
