@@ -3,6 +3,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+unset LD_LIBRARY_PATH || true
+unset CUDA_HOME || true
+unset CUDA_PATH || true
+
 DEFAULT_PYTHON_BIN="/data/Shenzhen/zhahongli/envs/ldmvfi/bin/python"
 if [ -x "$DEFAULT_PYTHON_BIN" ]; then
   PYTHON_BIN="${PYTHON_BIN:-$DEFAULT_PYTHON_BIN}"
