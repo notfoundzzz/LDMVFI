@@ -270,8 +270,9 @@ def main():
     parser.add_argument("--even_corrector_hidden_channels", type=int, default=32)
     parser.add_argument("--even_corrector_num_blocks", type=int, default=4)
     parser.add_argument("--even_corrector_max_residue", type=float, default=0.25)
-    parser.add_argument("--even_corrector_mode", choices=["residual", "fusion"], default="residual")
+    parser.add_argument("--even_corrector_mode", choices=["residual", "fusion", "confidence_gated"], default="residual")
     parser.add_argument("--even_corrector_fusion_init_pred_logit", type=float, default=8.0)
+    parser.add_argument("--even_corrector_fusion_gate_init_bias", type=float, default=-4.0)
     parser.add_argument("--even_corrector_use_flow_inputs", type=int, choices=[0, 1], default=0)
     parser.add_argument("--even_corrector_flow_backend", choices=["farneback", "raft"], default="farneback")
     parser.add_argument("--even_corrector_flow_raft_variant", choices=["small", "large"], default="large")
@@ -362,6 +363,7 @@ def main():
             max_residue=args.even_corrector_max_residue,
             corrector_mode=args.even_corrector_mode,
             fusion_init_pred_logit=args.even_corrector_fusion_init_pred_logit,
+            fusion_gate_init_bias=args.even_corrector_fusion_gate_init_bias,
         )
         print(f"Loaded even-frame corrector from {args.even_corrector_ckpt}")
     result_groups = ["target"] if args.eval_pipeline == "triplet" else ["all7", "odd4", "even3"]

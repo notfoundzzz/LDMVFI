@@ -112,8 +112,9 @@ def main():
     parser.add_argument("--num_blocks", type=int, default=4)
     parser.add_argument("--max_residue", type=float, default=0.25)
     parser.add_argument("--use_flow_inputs", type=int, default=0)
-    parser.add_argument("--corrector_mode", choices=["residual", "fusion"], default="residual")
+    parser.add_argument("--corrector_mode", choices=["residual", "fusion", "confidence_gated"], default="residual")
     parser.add_argument("--fusion_init_pred_logit", type=float, default=8.0)
+    parser.add_argument("--fusion_gate_init_bias", type=float, default=-4.0)
     parser.add_argument("--edge_weight", type=float, default=0.0)
     parser.add_argument("--ssim_weight", type=float, default=0.0)
     parser.add_argument("--ssim_window", type=int, default=11)
@@ -172,6 +173,7 @@ def main():
         use_flow_inputs=bool(args.use_flow_inputs),
         corrector_mode=args.corrector_mode,
         fusion_init_pred_logit=args.fusion_init_pred_logit,
+        fusion_gate_init_bias=args.fusion_gate_init_bias,
     ).to(device)
     if distributed:
         corrector = DDP(corrector, device_ids=[local_rank], output_device=local_rank)
@@ -184,7 +186,8 @@ def main():
         print(
             f"corrector hidden={args.hidden_channels} blocks={args.num_blocks} "
             f"max_residue={args.max_residue} use_flow_inputs={bool(args.use_flow_inputs)} "
-            f"mode={args.corrector_mode} edge_weight={args.edge_weight} "
+            f"mode={args.corrector_mode} fusion_gate_init_bias={args.fusion_gate_init_bias} "
+            f"edge_weight={args.edge_weight} "
             f"ssim_weight={args.ssim_weight} ssim_window={args.ssim_window}",
             flush=True,
         )
