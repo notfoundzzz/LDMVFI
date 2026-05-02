@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass
 from typing import List, Sequence, Tuple
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageOps
 
 
 PANEL_BG = (245, 245, 245)
@@ -41,6 +41,16 @@ def parse_crop(value: str) -> Tuple[int, int, int, int]:
     if w <= 0 or h <= 0:
         raise argparse.ArgumentTypeError(f"Crop width/height must be positive: {value}")
     return x, y, w, h
+
+
+def parse_target_frame(value: str) -> int:
+    try:
+        frame_id = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"Target frame must be an integer, got: {value}") from exc
+    if frame_id not in (2, 4, 6):
+        raise argparse.ArgumentTypeError("Target frame must be one of 2, 4, or 6 for even-frame comparison")
+    return frame_id
 
 
 def load_font(size: int):
@@ -138,6 +148,14 @@ def crop_and_fit(img: Image.Image, crop: Tuple[int, int, int, int], size: int) -
     return fit_image(cropped, size)
 
 
+def make_error_map(gt: Image.Image, pred: Image.Image, scale: float) -> Image.Image:
+    if pred.size != gt.size:
+        pred = pred.resize(gt.size, Image.Resampling.BICUBIC)
+    diff = ImageChops.difference(gt.convert("RGB"), pred.convert("RGB")).convert("L")
+    diff = diff.point(lambda p: min(255, int(round(p * scale))))
+    return ImageOps.colorize(diff, black=(255, 255, 255), white=(198, 62, 46)).convert("RGB")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate a stitched demo figure for thesis/PPT reporting.")
     parser.add_argument("--sample-relpath", required=True, help="Sample relative path, e.g. 00001/0001")
@@ -148,6 +166,15 @@ def main():
                         help="Method result root in LABEL=DIR form. Repeat for multiple methods.")
     parser.add_argument("--output", required=True, help="Output PNG path")
     parser.add_argument("--title", default="", help="Optional figure title")
+    parser.add_argument("--target-frame", type=parse_target_frame, default=None,
+                        help="Even target frame for full-chain outputs. Use 2, 4, or 6. "
+                             "When set, method outputs default to output_im{N}.png.")
+    parser.add_argument("--method-output-filename", default="",
+                        help="Override method output filename. Defaults to output.png, or output_im{N}.png with --target-frame.")
+    parser.add_argument("--show-error-maps", action="store_true",
+                        help="Add an absolute error-map row for each method against GT.")
+    parser.add_argument("--error-scale", type=float, default=4.0,
+                        help="Multiplier applied before visualizing absolute error maps.")
     parser.add_argument("--crop", action="append", type=parse_crop, default=[],
                         help="Crop box x,y,w,h. Repeat for multiple zoom regions.")
     parser.add_argument("--panel-size", type=int, default=256)
@@ -158,13 +185,24 @@ def main():
     title_font = load_font(34)
     small_font = load_font(22)
 
-    prev_lr = Image.open(resolve_dataset_image(args.dataset_root_lr, args.sample_relpath, "im3.png", args.split)).convert("RGB")
-    next_lr = Image.open(resolve_dataset_image(args.dataset_root_lr, args.sample_relpath, "im5.png", args.split)).convert("RGB")
-    gt = Image.open(resolve_dataset_image(args.dataset_root_hr, args.sample_relpath, "im4.png")).convert("RGB")
+    target_frame = args.target_frame or 4
+    prev_frame = target_frame - 1
+    next_frame = target_frame + 1
+    method_output_filename = args.method_output_filename
+    if not method_output_filename:
+        method_output_filename = f"output_im{target_frame}.png" if args.target_frame else "output.png"
+
+    prev_lr = Image.open(
+        resolve_dataset_image(args.dataset_root_lr, args.sample_relpath, f"im{prev_frame}.png", args.split)
+    ).convert("RGB")
+    next_lr = Image.open(
+        resolve_dataset_image(args.dataset_root_lr, args.sample_relpath, f"im{next_frame}.png", args.split)
+    ).convert("RGB")
+    gt = Image.open(resolve_dataset_image(args.dataset_root_hr, args.sample_relpath, f"im{target_frame}.png")).convert("RGB")
 
     method_images = []
     for method in args.method:
-        out_path = resolve_method_image(method.root, args.sample_relpath, "output.png", args.split)
+        out_path = resolve_method_image(method.root, args.sample_relpath, method_output_filename, args.split)
         method_images.append((method.label, Image.open(out_path).convert("RGB")))
 
     panel_size = args.panel_size
@@ -174,17 +212,23 @@ def main():
     header_h = 56 if args.title else 0
     crop_header_h = 30 if args.crop else 0
 
-    top_row_labels = ["Prev LR", "Next LR", "GT Middle"]
+    top_row_labels = [f"Prev LR im{prev_frame}", f"Next LR im{next_frame}", f"GT im{target_frame}"]
     top_row_images = [prev_lr, next_lr, gt]
     compare_labels = ["GT"] + [label for label, _ in method_images]
     compare_images = [gt] + [img for _, img in method_images]
+    error_labels = [f"Error: {label}" for label, _ in method_images]
+    error_images = [make_error_map(gt, img, args.error_scale) for _, img in method_images]
 
     top_cols = len(top_row_images)
     compare_cols = len(compare_images)
     crop_cols = compare_cols
+    error_cols = len(error_images) if args.show_error_maps else 0
 
-    width = max(top_cols, compare_cols, crop_cols) * panel_size + (max(top_cols, compare_cols, crop_cols) + 1) * gap
+    max_cols = max(top_cols, compare_cols, crop_cols, error_cols)
+    width = max_cols * panel_size + (max_cols + 1) * gap
     height = header_h + gap + row_h + gap + row_h
+    if args.show_error_maps:
+        height += gap + row_h
     if args.crop:
         height += gap + crop_header_h + len(args.crop) * (row_h + gap)
 
@@ -205,6 +249,12 @@ def main():
         draw_labeled_panel(draw, canvas, img, label, left, y, panel_size, title_h, label_font)
         if args.crop:
             draw_crop_boxes(draw, left, y + title_h, panel_size, img.size, args.crop)
+
+    if args.show_error_maps:
+        y += row_h + gap
+        for idx, (label, img) in enumerate(zip(error_labels, error_images)):
+            left = gap + idx * (panel_size + gap)
+            draw_labeled_panel(draw, canvas, img, label, left, y, panel_size, title_h, small_font)
 
     if args.crop:
         y += row_h + gap

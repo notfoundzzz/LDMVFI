@@ -1,0 +1,3 @@
+Method,all7 PSNR,all7 SSIM,odd4 PSNR,odd4 SSIM,even3 PSNR,even3 SSIM
+SR-VFI baseline,29.716,0.910,30.825,0.917,28.237,0.901
+RAFT fusion + edge,29.745,0.911,30.825,0.917,28.305,0.902
