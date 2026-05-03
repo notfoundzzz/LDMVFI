@@ -23,14 +23,14 @@ Outputs:
 After baseline and best-corrector full-chain evaluations finish, regenerate with their `_summaries` directories.
 Use explicit diagnosis JSON filenames. Do not choose the latest timestamped file automatically, because RAFT and Farneback runs share the same filename prefix.
 
-```bash
-cp /data/Shenzhen/zhahongli/LDMVFI/diagnostics/even_corrector_cache/diagnose_even_cache_RAFT_TIMESTAMP.json \
-  /data/Shenzhen/zhahongli/LDMVFI/diagnostics/even_corrector_cache/diagnose_raft_full_val.json
-cp /data/Shenzhen/zhahongli/LDMVFI/diagnostics/even_corrector_cache/diagnose_even_cache_FARNE_TIMESTAMP.json \
-  /data/Shenzhen/zhahongli/LDMVFI/diagnostics/even_corrector_cache/diagnose_farneback_full_val.json
+For full-validation diagnosis, prefer the parallel launcher:
 
-RAFT_DIAG_JSON=/data/Shenzhen/zhahongli/LDMVFI/diagnostics/even_corrector_cache/diagnose_raft_full_val.json
-FARNE_DIAG_JSON=/data/Shenzhen/zhahongli/LDMVFI/diagnostics/even_corrector_cache/diagnose_farneback_full_val.json
+```bash
+cd /data/Shenzhen/zhahongli/LDMVFI && DIAG_STAMP=raft_full_val GPU_IDS=4,5 CACHE_ROOT=/cache/zhahongli/even_corrector_spynet_ddim200_raftlarge_10000_valfull SPLITS=slow_test,medium_test,fast_test MAX_SAMPLES=0 METRICS=PSNR,SSIM,LPIPS bash run_cloud_diagnose_even_cache_parallel.sh
+cd /data/Shenzhen/zhahongli/LDMVFI && DIAG_STAMP=farneback_full_val GPU_IDS=6,7 CACHE_ROOT=/cache/zhahongli/even_corrector_spynet_ddim200_farneback_valfull SPLITS=slow_test,medium_test,fast_test MAX_SAMPLES=0 METRICS=PSNR,SSIM,LPIPS bash run_cloud_diagnose_even_cache_parallel.sh
+
+RAFT_DIAG_JSON=/data/Shenzhen/zhahongli/LDMVFI/diagnostics/even_corrector_cache/diagnose_even_cache_raft_full_val_merged.json
+FARNE_DIAG_JSON=/data/Shenzhen/zhahongli/LDMVFI/diagnostics/even_corrector_cache/diagnose_even_cache_farneback_full_val_merged.json
 ```
 
 If the ablation values have been recomputed on full validation, prepare a CSV:

@@ -13,13 +13,21 @@ from evaluate_rvrt_ldmvfi import compute_metrics
 
 
 class CachedEvenDataset(Dataset):
-    def __init__(self, cache_root, splits, max_samples=0):
+    def __init__(self, cache_root, splits, max_samples=0, shard_id=0, num_shards=1):
+        if num_shards < 1:
+            raise ValueError("--num_shards must be >= 1")
+        if shard_id < 0 or shard_id >= num_shards:
+            raise ValueError(f"--shard_id must be in [0, {num_shards}), got {shard_id}")
         self.paths = []
         self.splits = [split.strip() for split in splits.split(",") if split.strip()]
+        self.shard_id = shard_id
+        self.num_shards = num_shards
         for split in self.splits:
             split_paths = sorted(glob.glob(join(cache_root, split, "*.pt")))
             if max_samples > 0:
                 split_paths = split_paths[:max_samples]
+            if num_shards > 1:
+                split_paths = [path for idx, path in enumerate(split_paths) if idx % num_shards == shard_id]
             self.paths.extend(split_paths)
         if not self.paths:
             raise FileNotFoundError(f"No cached .pt files found under {cache_root} for splits={self.splits}")
@@ -107,6 +115,19 @@ def merge_residual_stats(stats_list):
     return merged
 
 
+def sum_residual_stats(stats_list):
+    return {key: float(sum(stats[key] for stats in stats_list)) for key in stats_list[0].keys()}
+
+
+def metric_sums_and_counts(metric_store, metrics):
+    sums = {}
+    counts = {}
+    for name, scores in metric_store.items():
+        sums[name] = {metric: float(sum(score[metric] for score in scores)) for metric in metrics}
+        counts[name] = {metric: len(scores) for metric in metrics}
+    return sums, counts
+
+
 def normalize_counts(counts, total):
     return {name: round(float(count) / float(max(total, 1)), 4) for name, count in counts.items()}
 
@@ -120,12 +141,20 @@ def main():
     parser.add_argument("--num_workers", type=int, default=2)
     parser.add_argument("--metrics", nargs="+", default=["PSNR", "SSIM", "LPIPS"])
     parser.add_argument("--max_residues", default="0.25,0.5")
+    parser.add_argument("--shard_id", type=int, default=0)
+    parser.add_argument("--num_shards", type=int, default=1)
     parser.add_argument("--summary_json", default="")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     max_residues = [float(value) for value in args.max_residues.split(",") if value.strip()]
-    dataset = CachedEvenDataset(args.cache_root, args.splits, max_samples=args.max_samples)
+    dataset = CachedEvenDataset(
+        args.cache_root,
+        args.splits,
+        max_samples=args.max_samples,
+        shard_id=args.shard_id,
+        num_shards=args.num_shards,
+    )
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
     metric_store = defaultdict(list)
@@ -137,7 +166,10 @@ def main():
     has_warp = None
 
     print(f"cache_root={args.cache_root}", flush=True)
-    print(f"splits={args.splits} samples={len(dataset)} device={device}", flush=True)
+    print(
+        f"splits={args.splits} samples={len(dataset)} shard={args.shard_id}/{args.num_shards} device={device}",
+        flush=True,
+    )
 
     for batch_idx, batch in enumerate(loader, start=1):
         gt = flatten_time(batch["gt"]).to(device)
@@ -178,15 +210,27 @@ def main():
         if batch_idx == 1 or batch_idx % 10 == 0 or batch_idx == len(loader):
             print(f"processed {batch_idx}/{len(loader)} batches", flush=True)
 
+    metric_sums, metric_counts = metric_sums_and_counts(metric_store, args.metrics)
+    residual_summary = merge_residual_stats(residual_stats)
     summary = {
         "cache_root": args.cache_root,
         "splits": args.splits,
         "samples": len(dataset),
+        "shard_id": args.shard_id,
+        "num_shards": args.num_shards,
         "has_warp": bool(has_warp),
         "metrics": {name: mean_scores(scores, args.metrics) for name, scores in metric_store.items()},
+        "metric_sums": metric_sums,
+        "metric_counts": metric_counts,
         "pixel_oracle_choice_rate": normalize_counts(pixel_counts, total_pixels),
+        "pixel_oracle_counts": dict(pixel_counts),
+        "total_pixels": total_pixels,
         "frame_oracle_choice_rate": normalize_counts(frame_counts, total_frames),
-        "pred_abs_residual_stats": merge_residual_stats(residual_stats),
+        "frame_oracle_counts": dict(frame_counts),
+        "total_frames": total_frames,
+        "pred_abs_residual_stats": residual_summary,
+        "pred_abs_residual_stats_sum": sum_residual_stats(residual_stats),
+        "pred_abs_residual_stats_count": len(residual_stats),
     }
 
     print("==== metrics ====", flush=True)

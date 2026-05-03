@@ -26,14 +26,24 @@ BATCH_SIZE="${BATCH_SIZE:-1}"
 NUM_WORKERS="${NUM_WORKERS:-2}"
 METRICS="${METRICS:-PSNR,SSIM,LPIPS}"
 MAX_RESIDUES="${MAX_RESIDUES:-0.25,0.5}"
+SHARD_ID="${SHARD_ID:-0}"
+NUM_SHARDS="${NUM_SHARDS:-1}"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/diagnostics/even_corrector_cache}"
 LOG_ROOT="${LOG_ROOT:-$ROOT_DIR/logs}"
 
 mkdir -p "$OUT_DIR" "$LOG_ROOT"
-STAMP="$(date +%Y%m%d_%H%M%S)"
+STAMP="${DIAG_STAMP:-$(date +%Y%m%d_%H%M%S)}"
 LOG_FILE="$LOG_ROOT/diagnose_even_cache_${STAMP}.log"
 SUMMARY_JSON="$OUT_DIR/diagnose_even_cache_${STAMP}.json"
-ln -sfn "$(basename "$LOG_FILE")" "$LOG_ROOT/latest_diagnose_even_cache.log"
+if [[ "$NUM_SHARDS" != "1" ]]; then
+  LOG_FILE="$LOG_ROOT/diagnose_even_cache_${STAMP}_shard${SHARD_ID}of${NUM_SHARDS}.log"
+  SUMMARY_JSON="$OUT_DIR/diagnose_even_cache_${STAMP}_shard${SHARD_ID}of${NUM_SHARDS}.json"
+fi
+if [[ "$NUM_SHARDS" == "1" ]]; then
+  ln -sfn "$(basename "$LOG_FILE")" "$LOG_ROOT/latest_diagnose_even_cache.log"
+else
+  ln -sfn "$(basename "$LOG_FILE")" "$LOG_ROOT/latest_diagnose_even_cache_shard${SHARD_ID}of${NUM_SHARDS}.log"
+fi
 export PYTHONUNBUFFERED=1
 export CUDA_VISIBLE_DEVICES="$GPU_ID"
 
@@ -47,6 +57,8 @@ echo "splits=$SPLITS"
 echo "max_samples=$MAX_SAMPLES"
 echo "metrics=$METRICS"
 echo "max_residues=$MAX_RESIDUES"
+echo "shard_id=$SHARD_ID"
+echo "num_shards=$NUM_SHARDS"
 echo "log_file=$LOG_FILE"
 echo "summary_json=$SUMMARY_JSON"
 
@@ -59,6 +71,8 @@ CMD=(
   --num_workers "$NUM_WORKERS"
   --metrics ${METRICS//,/ }
   --max_residues "$MAX_RESIDUES"
+  --shard_id "$SHARD_ID"
+  --num_shards "$NUM_SHARDS"
   --summary_json "$SUMMARY_JSON"
 )
 
