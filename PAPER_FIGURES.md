@@ -89,3 +89,23 @@ python generate_demo_figure.py \
 ```
 
 Change `--sample-relpath` and `--crop` after inspecting saved predictions. Prefer fast-motion, edge, and texture-heavy samples.
+
+For fast screening, batch-generate several candidates first:
+
+```bash
+python batch_generate_demo_figures.py \
+  --split fast_test \
+  --dataset-root-lr /data/Shenzhen/zzff/STVSR/data/vimeo_septuplet/sequences_LR \
+  --dataset-root-hr /data/Shenzhen/zzff/STVSR/data/vimeo_septuplet/sequences \
+  --baseline-root /data/Shenzhen/zhahongli/LDMVFI/qual_sr_then_vfi_baseline_fast \
+  --corrector-root /data/Shenzhen/zhahongli/LDMVFI/qual_sr_then_vfi_raft_edge_step9000_fast \
+  --output-dir /data/Shenzhen/zhahongli/LDMVFI/figures/paper_demo_candidates \
+  --target-frame 4 \
+  --max-samples 8 \
+  --auto-crop-count 2 \
+  --auto-crop-size 96x96 \
+  --auto-crop-mode improvement
+```
+
+Zoom regions use HR-coordinate crop boxes in `x,y,w,h` format. The same box is applied to GT and all method outputs.
+Manual crops can be supplied repeatedly, for example `--crop 80,40,96,96 --crop 220,80,96,96`.
