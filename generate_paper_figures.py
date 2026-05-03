@@ -30,7 +30,7 @@ DEFAULT_MAIN_RESULTS = [
         "even3": {"PSNR": 28.237, "SSIM": 0.901},
     },
     {
-        "method": "RAFT fusion + edge",
+        "method": "RAFT fusion corrector",
         "all7": {"PSNR": 29.745, "SSIM": 0.911},
         "odd4": {"PSNR": 30.825, "SSIM": 0.917},
         "even3": {"PSNR": 28.305, "SSIM": 0.902},
@@ -42,8 +42,8 @@ DEFAULT_ABLATION = [
     {"method": "LDMVFI pred", "PSNR": 30.7474, "SSIM": 0.9391},
     {"method": "Farneback fusion", "PSNR": 30.8399, "SSIM": 0.9400},
     {"method": "RAFT fusion", "PSNR": 30.8599, "SSIM": 0.9404},
-    {"method": "RAFT fusion + edge", "PSNR": 30.8607, "SSIM": 0.9404},
-    {"method": "Confidence-gated + edge", "PSNR": 30.8547, "SSIM": 0.9404},
+    {"method": "RAFT fusion corrector", "PSNR": 30.8607, "SSIM": 0.9404},
+    {"method": "Confidence-gated fusion", "PSNR": 30.8547, "SSIM": 0.9404},
 ]
 
 
@@ -374,7 +374,7 @@ def main() -> None:
     parser.add_argument("--baseline-summary-dir", default="", help="Eval output root or _summaries dir for the baseline full-chain table.")
     parser.add_argument("--corrector-summary-dir", default="", help="Eval output root or _summaries dir for the best corrector full-chain table.")
     parser.add_argument("--baseline-name", default="SR-VFI baseline")
-    parser.add_argument("--corrector-name", default="RAFT fusion + edge")
+    parser.add_argument("--corrector-name", default="RAFT fusion corrector")
     parser.add_argument("--gap-odd4-psnr", type=float, default=35.916)
     parser.add_argument("--gap-even3-psnr", type=float, default=30.747)
     parser.add_argument("--raft-diagnosis-json", default="", help="Optional RAFT diagnose_even_corrector_cache summary json.")

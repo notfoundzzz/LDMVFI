@@ -40,7 +40,7 @@ method,PSNR,SSIM
 LDMVFI pred,30.7474,0.9391
 Farneback fusion,30.8399,0.9400
 RAFT fusion,30.8599,0.9404
-RAFT fusion + edge,30.8607,0.9404
+RAFT fusion corrector,30.8607,0.9404
 ```
 
 ```bash
@@ -81,7 +81,7 @@ python generate_demo_figure.py \
   --dataset-root-lr /data/Shenzhen/zzff/STVSR/data/vimeo_septuplet/sequences_LR \
   --dataset-root-hr /data/Shenzhen/zzff/STVSR/data/vimeo_septuplet/sequences \
   --method "SR-VFI baseline=/data/Shenzhen/zhahongli/LDMVFI/qual_sr_then_vfi_baseline_fast" \
-  --method "RAFT fusion + edge=/data/Shenzhen/zhahongli/LDMVFI/qual_sr_then_vfi_raft_edge_step9000_fast" \
+  --method "RAFT fusion corrector=/data/Shenzhen/zhahongli/LDMVFI/qual_sr_then_vfi_raft_edge_step9000_fast" \
   --target-frame 4 \
   --show-error-maps \
   --crop 80,40,96,96 \
