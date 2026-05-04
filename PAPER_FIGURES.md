@@ -109,3 +109,20 @@ python batch_generate_demo_figures.py \
 
 Zoom regions use HR-coordinate crop boxes in `x,y,w,h` format. The same box is applied to GT and all method outputs.
 Manual crops can be supplied repeatedly, for example `--crop 80,40,96,96 --crop 220,80,96,96`.
+
+For the final paper qualitative figure, use the compact layout without error maps:
+
+```bash
+python generate_paper_qual_demo.py \
+  --sample-relpath 00001/0625 \
+  --split fast_test \
+  --target-frame 4 \
+  --dataset-root-hr /data/Shenzhen/zzff/STVSR/data/vimeo_septuplet/sequences \
+  --baseline-root /data/Shenzhen/zhahongli/LDMVFI/qual_sr_then_vfi_baseline_fast \
+  --corrector-root /data/Shenzhen/zhahongli/LDMVFI/qual_sr_then_vfi_raft_corrector_fast \
+  --crop "Pen tip=176,104,112,112" \
+  --crop "Little finger=120,20,128,128" \
+  --output /data/Shenzhen/zhahongli/LDMVFI/figures/paper/qual_paper_fast_00001_0625_im4.png
+```
+
+The selected crops intentionally focus on the pen tip and the little-finger region. The pen-tip crop is visually useful because it shows both local correction and a remaining motion-boundary artifact of the RAFT-based candidate.
